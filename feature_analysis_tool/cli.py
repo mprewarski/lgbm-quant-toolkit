@@ -9,7 +9,7 @@ from .analysis import FeatureAnalyzer
 from .config import AnalysisConfig
 from .project import load_project, save_project
 from .report import generate_report
-from .utils import optional_import
+from .utils import ensure_dir, optional_import, setup_logger
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,6 +66,9 @@ def _build_config(args: argparse.Namespace) -> AnalysisConfig:
         stability_psi_threshold=pick("stability_psi_threshold", 0.2),
         shap_sample_rows=pick("shap_sample_rows", 2000),
         exclude_columns=pick("exclude_columns", None),
+        log_level=pick("log_level", "INFO"),
+        log_path=pick("log_path", None),
+        lgbm_params=pick("lgbm_params", None),
     )
 
 
@@ -84,6 +87,10 @@ def run_analysis(args: argparse.Namespace) -> None:
 
     if not config.data_path or not config.target_col:
         raise ValueError("--data and --target are required unless --load-project is set")
+
+    ensure_dir(config.output_dir)
+    log_path = config.log_path or os.path.join(config.output_dir, "run.log")
+    setup_logger("feature_analysis", config.log_level, log_path)
 
     analyzer = FeatureAnalyzer(config)
     results, model = analyzer.run()

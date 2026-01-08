@@ -5,10 +5,21 @@
   "output_dir": "feature_analysis_output",
   "sample_rows": 50000,
   "time_bucket": "M",
+  "random_state": 42,
   "exclude_columns": ["P123 ID", "Ticker"],
   "leakage_corr_threshold": 0.9,
   "leakage_mi_quantile": 0.99,
   "vif_threshold": 10.0,
   "stability_psi_threshold": 0.2,
-  "shap_sample_rows": 2000
+  "shap_sample_rows": 2000,
+  "log_level": "INFO",
+  "log_path": "feature_analysis_output/run.log",
+  "lgbm_params": {
+    "n_estimators": 300,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "num_leaves": 31,
+    "min_child_samples": 20
+  }
 }

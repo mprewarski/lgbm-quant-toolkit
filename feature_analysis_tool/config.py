@@ -18,3 +18,6 @@ class AnalysisConfig:
     stability_psi_threshold: float = 0.2
     shap_sample_rows: int = 2000
     exclude_columns: Optional[List[str]] = None
+    log_level: str = "INFO"
+    log_path: Optional[str] = None
+    lgbm_params: Optional[dict] = None

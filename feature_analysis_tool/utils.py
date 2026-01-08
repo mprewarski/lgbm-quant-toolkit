@@ -2,6 +2,7 @@ import json
 import math
 import os
 from typing import Any, Dict, Iterable, Tuple
+import logging
 
 
 def optional_import(name: str):
@@ -14,6 +15,24 @@ def optional_import(name: str):
 
 def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
+
+
+def setup_logger(name: str, level: str, log_path: str) -> logging.Logger:
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    return logger
 
 
 def to_serializable(value: Any) -> Any:

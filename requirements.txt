@@ -8,3 +8,4 @@ seaborn
 lightgbm
 streamlit
 shap
+plotly

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -36,6 +37,8 @@ body { font-family: "Segoe UI", Arial, sans-serif; margin: 24px; background: var
 .num { font-variant-numeric: tabular-nums; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #f1f3f9; color: var(--muted); margin-right: 6px; }
 .pill.danger { background: #fee2e2; color: var(--danger); }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.chart { width: 100%; height: 360px; }
 """
 
 
@@ -148,8 +151,10 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     notes = results.get("notes", [])
     leakage = results.get("leakage", {})
     config = results.get("config", {})
+    metadata = results.get("metadata", {})
+    name_mapping = metadata.get("name_mapping", {})
 
-    leakage_flags = [name for name, info in leakage.items() if info.get("flag")]
+    leakage_flags = [name_mapping.get(name, name) for name, info in leakage.items() if info.get("flag")]
 
     summary = {
         "Total features": len(feature_table),
@@ -159,7 +164,21 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     df = pd.DataFrame(feature_table) if feature_table else pd.DataFrame()
     top_gain = []
     top_psi = []
+    plot_payload = {}
     if not df.empty:
+        df_plot = df.copy()
+        for col in ["importance_gain", "shap_mean_abs", "psi_max", "corr"]:
+            if col in df_plot.columns:
+                df_plot[col] = pd.to_numeric(df_plot[col], errors="coerce")
+        df_plot = df_plot.sort_values(by="importance_gain", ascending=False, na_position="last")
+        top_rows = df_plot.head(25)
+        plot_payload = {
+            "features": top_rows["feature"].tolist(),
+            "importance_gain": top_rows.get("importance_gain", pd.Series()).fillna(0).tolist(),
+            "shap_mean_abs": top_rows.get("shap_mean_abs", pd.Series()).fillna(0).tolist(),
+            "psi_max": top_rows.get("psi_max", pd.Series()).fillna(0).tolist(),
+            "corr": top_rows.get("corr", pd.Series()).fillna(0).tolist(),
+        }
         if "importance_gain" in df.columns:
             top_gain = (
                 df.sort_values(by="importance_gain", ascending=False, na_position="last")
@@ -200,6 +219,9 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
             config_items.append(
                 f"<span class=\"pill\">excluded: {len(config.get('exclude_columns', []))}</span>"
             )
+        for key in ["leakage_corr_threshold", "leakage_mi_quantile", "vif_threshold", "stability_psi_threshold"]:
+            if config.get(key) is not None:
+                config_items.append(f"<span class=\"pill\">{key}: {config.get(key)}</span>")
         config_html = "<div>" + "".join(config_items) + "</div>"
 
     top_gain_html = ""
@@ -210,6 +232,14 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     if top_psi:
         top_psi_html = "<p><span class=\"pill danger\">Most unstable</span> " + ", ".join(top_psi) + "</p>"
 
+    plotly_data = json.dumps(plot_payload)
+    thresholds = {
+        "stability_psi_threshold": config.get("stability_psi_threshold"),
+        "leakage_corr_threshold": config.get("leakage_corr_threshold"),
+        "vif_threshold": config.get("vif_threshold"),
+    }
+    plotly_thresholds = json.dumps(thresholds)
+
     html = f"""
 <!DOCTYPE html>
 <html lang=\"en\">
@@ -217,6 +247,7 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
   <meta charset=\"utf-8\">
   <title>Feature Analysis Report</title>
   <style>{CSS}</style>
+  <script src=\"https://cdn.plot.ly/plotly-2.26.0.min.js\"></script>
 </head>
 <body>
   <div class=\"header\">
@@ -234,6 +265,16 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
   </div>
 
   <div class=\"section\">
+    <h2>Interactive Charts</h2>
+    <div class=\"chart-grid\">
+      <div id=\"chart-gain\" class=\"chart\"></div>
+      <div id=\"chart-shap\" class=\"chart\"></div>
+      <div id=\"chart-stability\" class=\"chart\"></div>
+      <div id=\"chart-corr\" class=\"chart\"></div>
+    </div>
+  </div>
+
+  <div class=\"section\">
     <h2>Feature Table</h2>
     <div class=\"controls\">
       <input id=\"table-search\" type=\"text\" placeholder=\"Search feature names\" />
@@ -248,6 +289,108 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     {notes_html if notes_html else '<p class="note">No runtime warnings.</p>'}
   </div>
   <script>
+    const plotData = {plotly_data};
+    const thresholds = {plotly_thresholds};
+
+    function renderCharts() {{
+      if (!window.Plotly || !plotData || !plotData.features) {{
+        return;
+      }}
+      const features = plotData.features || [];
+      Plotly.newPlot("chart-gain", [{{
+        type: "bar",
+        x: plotData.importance_gain || [],
+        y: features,
+        orientation: "h",
+        marker: {{ color: "#0f4c5c" }},
+        name: "Gain"
+      }}], {{
+        title: "Top Importance (Gain)",
+        margin: {{ l: 140, r: 20, t: 40, b: 40 }},
+        height: 360
+      }});
+
+      Plotly.newPlot("chart-shap", [{{
+        type: "bar",
+        x: plotData.shap_mean_abs || [],
+        y: features,
+        orientation: "h",
+        marker: {{ color: "#e36414" }},
+        name: "SHAP"
+      }}], {{
+        title: "Top SHAP Mean |Value|",
+        margin: {{ l: 140, r: 20, t: 40, b: 40 }},
+        height: 360
+      }});
+
+      const psiThreshold = thresholds.stability_psi_threshold;
+      const psiLine = psiThreshold ? {{
+        type: "line",
+        x0: 0,
+        x1: 1,
+        xref: "paper",
+        y0: psiThreshold,
+        y1: psiThreshold,
+        line: {{ color: "#b91c1c", width: 2, dash: "dot" }}
+      }} : null;
+      Plotly.newPlot("chart-stability", [{{
+        type: "scatter",
+        mode: "markers",
+        x: plotData.importance_gain || [],
+        y: plotData.psi_max || [],
+        text: features,
+        marker: {{ color: "#1f2430" }}
+      }}], {{
+        title: "Stability (PSI Max) vs Gain",
+        xaxis: {{ title: "Gain" }},
+        yaxis: {{ title: "PSI Max" }},
+        shapes: psiLine ? [psiLine] : [],
+        margin: {{ l: 60, r: 20, t: 40, b: 50 }},
+        height: 360
+      }});
+
+      const corrThreshold = thresholds.leakage_corr_threshold;
+      const corrLine = corrThreshold ? [
+        {{
+          type: "line",
+          x0: corrThreshold,
+          x1: corrThreshold,
+          y0: 0,
+          y1: 1,
+          xref: "x",
+          yref: "paper",
+          line: {{ color: "#b91c1c", width: 2, dash: "dot" }}
+        }},
+        {{
+          type: "line",
+          x0: -corrThreshold,
+          x1: -corrThreshold,
+          y0: 0,
+          y1: 1,
+          xref: "x",
+          yref: "paper",
+          line: {{ color: "#b91c1c", width: 2, dash: "dot" }}
+        }}
+      ] : [];
+      Plotly.newPlot("chart-corr", [{{
+        type: "scatter",
+        mode: "markers",
+        x: plotData.corr || [],
+        y: plotData.importance_gain || [],
+        text: features,
+        marker: {{ color: "#0f4c5c" }}
+      }}], {{
+        title: "Correlation vs Gain",
+        xaxis: {{ title: "Correlation with Target" }},
+        yaxis: {{ title: "Gain" }},
+        shapes: corrLine,
+        margin: {{ l: 60, r: 20, t: 40, b: 50 }},
+        height: 360
+      }});
+    }}
+
+    renderCharts();
+
     const table = document.getElementById("feature-table");
     const searchInput = document.getElementById("table-search");
     const leakageToggle = document.getElementById("leakage-only");

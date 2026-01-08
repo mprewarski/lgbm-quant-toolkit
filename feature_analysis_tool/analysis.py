@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 
 from .config import AnalysisConfig
+import logging
+import re
+
 from .utils import (
     optional_import,
     percentile_bins,
@@ -54,6 +57,25 @@ def prepare_features(
         drop_cols.extend([col for col in exclude_columns if col not in drop_cols])
     feature_df = df.drop(columns=[col for col in drop_cols if col in df.columns])
 
+    name_mapping = {}
+    if any(re.search(r"[^0-9A-Za-z_]", col) for col in feature_df.columns):
+        used = set()
+        new_cols = []
+        for col in feature_df.columns:
+            safe = re.sub(r"[^0-9A-Za-z_]", "_", col)
+            safe = re.sub(r"_+", "_", safe).strip("_")
+            if not safe:
+                safe = "feature"
+            base = safe
+            counter = 1
+            while safe in used:
+                safe = f"{base}_{counter}"
+                counter += 1
+            used.add(safe)
+            name_mapping[safe] = col
+            new_cols.append(safe)
+        feature_df.columns = new_cols
+
     numeric_cols = [c for c in feature_df.columns if pd.api.types.is_numeric_dtype(feature_df[c])]
     categorical_cols = [c for c in feature_df.columns if c not in numeric_cols]
 
@@ -71,6 +93,8 @@ def prepare_features(
         "numeric_cols": numeric_cols,
         "categorical_cols": categorical_cols,
     }
+    if name_mapping:
+        metadata["name_mapping"] = name_mapping
     return feature_df, target_series, date_series, metadata
 
 
@@ -81,17 +105,21 @@ def train_or_load_model(
     metadata: Dict[str, Any],
 ) -> Tuple[Optional[Any], List[str]]:
     notes = []
+    logger = logging.getLogger("feature_analysis")
     lgb, err = optional_import("lightgbm")
     if lgb is None:
         notes.append(f"LightGBM not available: {err}")
+        logger.warning("LightGBM not available: %s", err)
         return None, notes
 
     if config.model_path:
         try:
             booster = lgb.Booster(model_file=config.model_path)
+            logger.info("Loaded LightGBM model from %s", config.model_path)
             return booster, notes
         except Exception as exc:
             notes.append(f"Failed to load model '{config.model_path}': {exc}")
+            logger.warning("Failed to load model '%s': %s", config.model_path, exc)
 
     target_kind = metadata["target_kind"]
     params = {
@@ -101,6 +129,15 @@ def train_or_load_model(
         "colsample_bytree": 0.8,
         "random_state": config.random_state,
     }
+    if config.lgbm_params:
+        params.update(config.lgbm_params)
+    logger.info(
+        "Training LightGBM model: target_kind=%s, rows=%d, features=%d, params=%s",
+        target_kind,
+        len(feature_df),
+        feature_df.shape[1],
+        params,
+    )
 
     try:
         if target_kind in {"binary", "categorical"}:
@@ -108,9 +145,11 @@ def train_or_load_model(
         else:
             model = lgb.LGBMRegressor(**params)
         model.fit(feature_df, target)
+        logger.info("Model training completed")
         return model, notes
     except Exception as exc:
         notes.append(f"Model training failed: {exc}")
+        logger.exception("Model training failed")
         return None, notes
 
 
@@ -349,11 +388,13 @@ def build_feature_table(
     woe_iv: Dict[str, Dict[str, float]],
     shap_vals: Dict[str, float],
     leakage: Dict[str, Dict[str, Any]],
+    name_mapping: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     table = []
     for name in feature_names:
+        display_name = name_mapping.get(name, name) if name_mapping else name
         row = {
-            "feature": name,
+            "feature": display_name,
             "importance_gain": importance.get(name, {}).get("gain"),
             "importance_split": importance.get(name, {}).get("split"),
             "corr": corr.get(name),
@@ -376,8 +417,10 @@ class FeatureAnalyzer:
 
     def run(self) -> Tuple[Dict[str, Any], Optional[Any]]:
         notes: List[str] = []
+        logger = logging.getLogger("feature_analysis")
         df = load_data(self.config.data_path)
         df = sample_df(df, self.config.sample_rows)
+        logger.info("Loaded data: rows=%d, cols=%d", len(df), df.shape[1])
 
         feature_df, target, date_series, metadata = prepare_features(
             df,
@@ -385,8 +428,17 @@ class FeatureAnalyzer:
             self.config.date_col,
             self.config.exclude_columns,
         )
+        if metadata.get("name_mapping"):
+            logger.info("Sanitized %d feature names for LightGBM", len(metadata["name_mapping"]))
+            notes.append("Sanitized feature names to satisfy LightGBM constraints")
         if self.config.exclude_columns:
             notes.append(f"Excluded columns: {', '.join(self.config.exclude_columns)}")
+            logger.info("Excluded columns: %s", ", ".join(self.config.exclude_columns))
+        logger.info(
+            "Prepared features: numeric=%d, categorical=%d",
+            len(metadata["numeric_cols"]),
+            len(metadata["categorical_cols"]),
+        )
 
         model, model_notes = train_or_load_model(feature_df, target, self.config, metadata)
         notes.extend(model_notes)
@@ -434,6 +486,7 @@ class FeatureAnalyzer:
             woe_iv,
             shap_vals,
             leakage,
+            metadata.get("name_mapping"),
         )
 
         results = {
