@@ -1,0 +1,14 @@
+{
+  "data_path": "sp500-y17-65.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "feature_analysis_output",
+  "sample_rows": 50000,
+  "time_bucket": "M",
+  "exclude_columns": ["P123 ID", "Ticker"],
+  "leakage_corr_threshold": 0.9,
+  "leakage_mi_quantile": 0.99,
+  "vif_threshold": 10.0,
+  "stability_psi_threshold": 0.2,
+  "shap_sample_rows": 2000
+}
