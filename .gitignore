@@ -210,3 +210,5 @@ __marimo__/
 *_output
 design*.xml
 .DS_Store
+*.csv
+

@@ -20,3 +20,6 @@ class OptunaConfig:
     storage_path: Optional[str] = "optuna_output/study.db"
     log_level: str = "INFO"
     log_path: Optional[str] = "optuna_output/run.log"
+    enable_pruning: bool = False
+    prune_warmup_steps: int = 10
+    prune_interval_steps: int = 1

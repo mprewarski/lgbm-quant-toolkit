@@ -1,6 +1,9 @@
-# LightGBM Feature Analysis Tool
+# LightGBM Quant Toolkit
 
-A modular feature analysis pipeline for LightGBM models. It evaluates feature importance, stability, correlation, SHAP contributions, WOE/IV (for binary targets), and flags potential leakage risks. The output is an interactive HTML report plus optional saved project artifacts.
+This repo includes two modular tools for LightGBM workflows:
+
+- Feature Analysis Tool: evaluates feature importance, stability, correlation, SHAP contributions, WOE/IV (for binary targets), and flags potential leakage risks.
+- Optuna Hyperparameter Tool: tunes LightGBM hyperparameters with Optuna, evaluates validation performance, and generates an HTML report with study visuals.
 
 ## Quick Start
 
@@ -11,13 +14,21 @@ A modular feature analysis pipeline for LightGBM models. It evaluates feature im
 pip install -r requirements.txt
 ```
 
-3. Run the analysis using a config file:
+3. Run the feature analysis using a config file:
 
 ```bash
 python -m feature_analysis_tool --config feature_analysis_config.json --save-project
 ```
 
 The report is generated at `feature_analysis_output/report.html`.
+
+4. Run the Optuna hyperparameter search using a config file:
+
+```bash
+python -m optuna_tool --config optuna_config.json
+```
+
+The report is generated at `optuna_output/report.html`.
 
 ## Configuration
 
@@ -27,7 +38,7 @@ Example `feature_analysis_config.json`:
 
 ```json
 {
-  "data_path": "sp500-y17-65.csv",
+  "data_path": "sp500-Y-18-64-RankDate-20Y.csv",
   "target_col": "TARGET",
   "date_col": "Date",
   "output_dir": "feature_analysis_output",
@@ -61,6 +72,32 @@ Example `feature_analysis_config.json`:
 }
 ```
 
+Example `optuna_config.json`:
+
+```json
+{
+  "data_path": "sp500-y17-65.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "optuna_output",
+  "exclude_columns": ["P123 ID", "Ticker"],
+  "categorical_columns": ["Sub-Sector Code"],
+  "n_trials": 50,
+  "timeout": null,
+  "test_size": 0.2,
+  "random_state": 42,
+  "metric": null,
+  "direction": null,
+  "study_name": "lgbm_optuna",
+  "storage_path": "optuna_output/study.db",
+  "log_level": "INFO",
+  "log_path": "optuna_output/run.log",
+  "enable_pruning": false,
+  "prune_warmup_steps": 10,
+  "prune_interval_steps": 1
+}
+```
+
 ### Config options
 
 - `data_path`: CSV dataset path.
@@ -89,6 +126,28 @@ Example `feature_analysis_config.json`:
 - `debug_output`: Debug report filename (written to `output_dir`).
 - `debug_sample_rows`: Optional sampling cap for debug report data.
 
+### Optuna config options
+
+- `data_path`: CSV dataset path.
+- `target_col`: Target column name.
+- `date_col`: Optional date column (removed from features).
+- `output_dir`: Output directory for reports and Optuna storage.
+- `exclude_columns`: List of columns to exclude from training.
+- `categorical_columns`: Columns to treat as categorical features.
+- `n_trials`: Number of Optuna trials to run.
+- `timeout`: Optional max runtime in seconds.
+- `test_size`: Validation split fraction.
+- `random_state`: Random seed for data split and LightGBM.
+- `metric`: Override metric (`auc`, `logloss`, `multi_logloss`, `accuracy`, `rmse`, `mae`, `mse`, `r2`).
+- `direction`: Override optimization direction (`maximize` or `minimize`).
+- `study_name`: Optuna study name.
+- `storage_path`: SQLite path for Optuna study storage.
+- `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
+- `log_path`: Path for the run log file.
+- `enable_pruning`: Enable Optuna pruning based on intermediate validation metrics.
+- `prune_warmup_steps`: Iterations to wait before pruning starts.
+- `prune_interval_steps`: Pruning check interval in boosting iterations.
+
 ## CLI usage
 
 ```bash
@@ -113,11 +172,23 @@ To generate the debug report:
 python -m feature_analysis_tool --config feature_analysis_config.json --save-project --debug
 ```
 
+Optuna CLI example:
+
+```bash
+python -m optuna_tool --data sp500-y17-65.csv --target TARGET --trials 75 --metric auc
+```
+
 ## Output
 
 - `report.html`: Interactive report with sortable/filterable table and Plotly charts.
 - `results.json`: JSON summary of all metrics.
 - `model.txt`: Saved LightGBM model (when trained and `--save-project` is used).
+
+Optuna outputs:
+
+- `optuna_output/report.html`: HTML report with study summary and Optuna charts.
+- `optuna_output/results.json`: Best parameters and trial summary.
+- `optuna_output/study.db`: SQLite Optuna study database.
 
 ## Report features
 
@@ -135,3 +206,4 @@ python -m feature_analysis_tool --config feature_analysis_config.json --save-pro
 
 - SHAP, statsmodels, scipy, and sklearn are optional but recommended for full metrics.
 - If Plotly JS fails to load (offline environments), charts will be skipped but the report still renders.
+- For interactive Optuna dashboards, install and run `optuna-dashboard` against `optuna_output/study.db`.

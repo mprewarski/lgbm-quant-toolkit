@@ -1,0 +1,19 @@
+{
+  "data_path": "sp500-y18-64-zs-dataset.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "optuna_output",
+  "exclude_columns": ["P123 ID", "Ticker"],
+  "categorical_columns": ["Sub-Sector Code"],
+  "n_trials": 30,
+  "timeout": null,
+  "test_size": 0.2,
+  "random_state": 42,
+  "metric": "rmse",
+  "direction": null,
+  "study_name": "lgbm_optuna",
+  "storage_path": "optuna_output/study.db",
+  "log_level": "INFO",
+  "log_path": "optuna_output/run.log"
+}
+
