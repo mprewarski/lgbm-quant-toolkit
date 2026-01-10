@@ -49,7 +49,15 @@ Example `feature_analysis_config.json`:
     "colsample_bytree": 0.8,
     "num_leaves": 31,
     "min_child_samples": 20
-  }
+  },
+  "top_corr_pairs": 25,
+  "categorical_columns": ["Sub-Sector Code"],
+  "debug_report": false,
+  "debug_feature": "macro - VIX index (Series)",
+  "debug_symbol_col": "Ticker",
+  "debug_symbol": "AAPL",
+  "debug_output": "debug_report.html",
+  "debug_sample_rows": 200000
 }
 ```
 
@@ -72,6 +80,14 @@ Example `feature_analysis_config.json`:
 - `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
 - `log_path`: Path for the run log file.
 - `lgbm_params`: Dictionary of LightGBM training parameters (overrides defaults).
+- `top_corr_pairs`: Number of top absolute-correlation feature pairs to list.
+- `categorical_columns`: Columns to force as categorical features for LightGBM.
+- `debug_report`: Enable the debug report generation (only runs when `--debug` is passed).
+- `debug_feature`: Feature/column to plot over time.
+- `debug_symbol_col`: Column used to filter a single entity (e.g., `Ticker`).
+- `debug_symbol`: Value to filter `debug_symbol_col`.
+- `debug_output`: Debug report filename (written to `output_dir`).
+- `debug_sample_rows`: Optional sampling cap for debug report data.
 
 ## CLI usage
 
@@ -91,6 +107,12 @@ To reload a saved project and regenerate the report:
 python -m feature_analysis_tool --config feature_analysis_config.json --load-project
 ```
 
+To generate the debug report:
+
+```bash
+python -m feature_analysis_tool --config feature_analysis_config.json --save-project --debug
+```
+
 ## Output
 
 - `report.html`: Interactive report with sortable/filterable table and Plotly charts.
@@ -105,6 +127,9 @@ python -m feature_analysis_tool --config feature_analysis_config.json --load-pro
 - Summary pills showing current config and threshold values.
 - `run.log` captures data loading and model training status.
 - Feature names are sanitized automatically for LightGBM (original names remain in the report).
+- Top correlated feature pairs table is appended to the report for pruning review.
+- A separate debug report can be generated to inspect a single feature over time.
+- Constant features are flagged; LightGBM may drop them during training.
 
 ## Notes
 

@@ -40,6 +40,7 @@ def prepare_features(
     target_col: str,
     date_col: Optional[str],
     exclude_columns: Optional[List[str]],
+    categorical_columns: Optional[List[str]],
 ) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series], Dict[str, Any]]:
     if target_col not in df.columns:
         raise ValueError(f"Target column '{target_col}' not found")
@@ -76,25 +77,45 @@ def prepare_features(
             new_cols.append(safe)
         feature_df.columns = new_cols
 
+    requested_categoricals = set(categorical_columns or [])
+    if name_mapping:
+        reverse_mapping = {orig: safe for safe, orig in name_mapping.items()}
+        requested_categoricals = {
+            reverse_mapping.get(col, col) for col in requested_categoricals
+        }
+    requested_categoricals = {col for col in requested_categoricals if col in feature_df.columns}
+
     numeric_cols = [c for c in feature_df.columns if pd.api.types.is_numeric_dtype(feature_df[c])]
     categorical_cols = [c for c in feature_df.columns if c not in numeric_cols]
+    for col in requested_categoricals:
+        if col in numeric_cols:
+            numeric_cols.remove(col)
+        if col not in categorical_cols:
+            categorical_cols.append(col)
 
     for col in numeric_cols:
         feature_df[col] = feature_df[col].replace([np.inf, -np.inf], np.nan)
         median = feature_df[col].median()
+        if pd.isna(median):
+            median = 0.0
         feature_df[col] = feature_df[col].fillna(median)
 
     for col in categorical_cols:
         feature_df[col] = feature_df[col].where(feature_df[col].notna(), "MISSING")
         feature_df[col] = feature_df[col].astype(str).astype("category")
 
+    constant_cols = [col for col in feature_df.columns if feature_df[col].nunique(dropna=False) <= 1]
+
     metadata = {
         "target_kind": target_kind,
         "numeric_cols": numeric_cols,
         "categorical_cols": categorical_cols,
+        "constant_cols": constant_cols,
     }
     if name_mapping:
         metadata["name_mapping"] = name_mapping
+    if requested_categoricals:
+        metadata["requested_categoricals"] = sorted(requested_categoricals)
     return feature_df, target_series, date_series, metadata
 
 
@@ -144,7 +165,8 @@ def train_or_load_model(
             model = lgb.LGBMClassifier(**params)
         else:
             model = lgb.LGBMRegressor(**params)
-        model.fit(feature_df, target)
+        categorical_features = metadata.get("categorical_cols") or None
+        model.fit(feature_df, target, categorical_feature=categorical_features)
         logger.info("Model training completed")
         return model, notes
     except Exception as exc:
@@ -180,6 +202,26 @@ def compute_correlation(feature_df: pd.DataFrame, target: pd.Series, numeric_col
         return {}
     corr = feature_df[numeric_cols].corrwith(target)
     return {name: float(val) for name, val in corr.items()}
+
+
+def compute_feature_correlations(
+    feature_df: pd.DataFrame,
+    numeric_cols: List[str],
+    top_n: int,
+) -> List[Dict[str, float]]:
+    if len(numeric_cols) < 2 or top_n <= 0:
+        return []
+    corr_matrix = feature_df[numeric_cols].corr().abs()
+    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    pairs = (
+        upper.stack()
+        .sort_values(ascending=False)
+        .head(top_n)
+    )
+    return [
+        {"feature_a": idx[0], "feature_b": idx[1], "corr": float(val)}
+        for idx, val in pairs.items()
+    ]
 
 
 def compute_mutual_info(feature_df: pd.DataFrame, target: pd.Series, numeric_cols: List[str], target_kind: str) -> Tuple[Dict[str, float], List[str]]:
@@ -427,10 +469,16 @@ class FeatureAnalyzer:
             self.config.target_col,
             self.config.date_col,
             self.config.exclude_columns,
+            self.config.categorical_columns,
         )
         if metadata.get("name_mapping"):
             logger.info("Sanitized %d feature names for LightGBM", len(metadata["name_mapping"]))
             notes.append("Sanitized feature names to satisfy LightGBM constraints")
+        if metadata.get("requested_categoricals"):
+            logger.info("Forced categorical columns: %s", ", ".join(metadata["requested_categoricals"]))
+            notes.append(
+                "Forced categorical columns: " + ", ".join(metadata["requested_categoricals"])
+            )
         if self.config.exclude_columns:
             notes.append(f"Excluded columns: {', '.join(self.config.exclude_columns)}")
             logger.info("Excluded columns: %s", ", ".join(self.config.exclude_columns))
@@ -439,12 +487,21 @@ class FeatureAnalyzer:
             len(metadata["numeric_cols"]),
             len(metadata["categorical_cols"]),
         )
+        if metadata.get("constant_cols"):
+            constant_list = ", ".join(metadata["constant_cols"])
+            logger.warning("Constant features detected (may be dropped by LightGBM): %s", constant_list)
+            notes.append(f"Constant features detected (may be dropped by LightGBM): {constant_list}")
 
         model, model_notes = train_or_load_model(feature_df, target, self.config, metadata)
         notes.extend(model_notes)
 
         importance = compute_feature_importance(model)
         corr = compute_correlation(feature_df, target, metadata["numeric_cols"])
+        top_corr_pairs = compute_feature_correlations(
+            feature_df,
+            metadata["numeric_cols"],
+            self.config.top_corr_pairs,
+        )
         mutual_info, mi_notes = compute_mutual_info(
             feature_df, target, metadata["numeric_cols"], metadata["target_kind"]
         )
@@ -494,6 +551,7 @@ class FeatureAnalyzer:
             "metadata": metadata,
             "importance": importance,
             "correlation": corr,
+            "top_corr_pairs": top_corr_pairs,
             "mutual_info": mutual_info,
             "ic": ic,
             "vif": vif,

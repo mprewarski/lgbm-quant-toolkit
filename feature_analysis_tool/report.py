@@ -153,6 +153,8 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     config = results.get("config", {})
     metadata = results.get("metadata", {})
     name_mapping = metadata.get("name_mapping", {})
+    constant_cols = [name_mapping.get(col, col) for col in metadata.get("constant_cols", [])]
+    top_corr_pairs = results.get("top_corr_pairs", [])
 
     leakage_flags = [name_mapping.get(name, name) for name, info in leakage.items() if info.get("flag")]
 
@@ -196,9 +198,16 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
         f"<div class=\"metric\"><div>{key}</div><strong>{val}</strong></div>" for key, val in summary.items()
     )
 
-    notes_html = ""
+    notes_blocks = []
     if notes:
-        notes_html = "<ul>" + "".join(f"<li class=\"note\">{note}</li>" for note in notes) + "</ul>"
+        notes_blocks.append("<ul>" + "".join(f"<li class=\"note\">{note}</li>" for note in notes) + "</ul>")
+    if constant_cols:
+        notes_blocks.append(
+            "<p class=\"note\">Constant features (likely dropped by LightGBM): "
+            + ", ".join(constant_cols)
+            + "</p>"
+        )
+    notes_html = "".join(notes_blocks)
 
     table_html = _format_table(feature_table)
 
@@ -239,6 +248,23 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
         "vif_threshold": config.get("vif_threshold"),
     }
     plotly_thresholds = json.dumps(thresholds)
+
+    corr_pairs_html = ""
+    if top_corr_pairs:
+        rows = []
+        for pair in top_corr_pairs:
+            feature_a = name_mapping.get(pair["feature_a"], pair["feature_a"])
+            feature_b = name_mapping.get(pair["feature_b"], pair["feature_b"])
+            corr_val = _format_float(pair.get("corr"))
+            rows.append(f"<tr><td>{feature_a}</td><td>{feature_b}</td><td>{corr_val}</td></tr>")
+        corr_pairs_html = (
+            "<div class=\"table-wrap\">"
+            "<table class=\"table\">"
+            "<thead><tr><th>Feature A</th><th>Feature B</th><th>|Corr|</th></tr></thead>"
+            "<tbody>"
+            + "".join(rows)
+            + "</tbody></table></div>"
+        )
 
     html = f"""
 <!DOCTYPE html>
@@ -287,6 +313,11 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
   <div class=\"section\">
     <h2>Notes</h2>
     {notes_html if notes_html else '<p class="note">No runtime warnings.</p>'}
+  </div>
+
+  <div class=\"section\">
+    <h2>Top Correlated Feature Pairs</h2>
+    {corr_pairs_html if corr_pairs_html else '<p class="note">No correlated pairs to display.</p>'}
   </div>
   <script>
     const plotData = {plotly_data};

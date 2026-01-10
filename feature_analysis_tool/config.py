@@ -21,3 +21,11 @@ class AnalysisConfig:
     log_level: str = "INFO"
     log_path: Optional[str] = None
     lgbm_params: Optional[dict] = None
+    top_corr_pairs: int = 25
+    categorical_columns: Optional[List[str]] = None
+    debug_report: bool = False
+    debug_feature: Optional[str] = None
+    debug_symbol_col: Optional[str] = None
+    debug_symbol: Optional[str] = None
+    debug_output: str = "debug_report.html"
+    debug_sample_rows: Optional[int] = 200000

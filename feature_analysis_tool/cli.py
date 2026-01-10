@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 from .analysis import FeatureAnalyzer
 from .config import AnalysisConfig
+from .debug_report import generate_debug_report
 from .project import load_project, save_project
 from .report import generate_report
 from .utils import ensure_dir, optional_import, setup_logger
@@ -24,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time-bucket", dest="time_bucket", default=None)
     parser.add_argument("--save-project", action="store_true", help="Save analysis outputs")
     parser.add_argument("--load-project", action="store_true", help="Load existing project outputs")
+    parser.add_argument("--debug", action="store_true", help="Generate debug report")
     return parser
 
 
@@ -69,6 +71,14 @@ def _build_config(args: argparse.Namespace) -> AnalysisConfig:
         log_level=pick("log_level", "INFO"),
         log_path=pick("log_path", None),
         lgbm_params=pick("lgbm_params", None),
+        top_corr_pairs=pick("top_corr_pairs", 25),
+        categorical_columns=pick("categorical_columns", None),
+        debug_report=pick("debug_report", False),
+        debug_feature=pick("debug_feature", None),
+        debug_symbol_col=pick("debug_symbol_col", None),
+        debug_symbol=pick("debug_symbol", None),
+        debug_output=pick("debug_output", "debug_report.html"),
+        debug_sample_rows=pick("debug_sample_rows", 200000),
     )
 
 
@@ -100,6 +110,11 @@ def run_analysis(args: argparse.Namespace) -> None:
 
     report_path = os.path.join(config.output_dir, "report.html")
     generate_report(results, report_path)
+    if args.debug:
+        config.debug_report = True
+        debug_path = generate_debug_report(config)
+        if debug_path:
+            print(f"Debug report generated at {debug_path}")
     print(f"Report generated at {report_path}")
 
 

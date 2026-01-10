@@ -9,3 +9,4 @@ lightgbm
 streamlit
 shap
 plotly
+optuna

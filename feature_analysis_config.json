@@ -21,5 +21,13 @@
     "colsample_bytree": 0.8,
     "num_leaves": 31,
     "min_child_samples": 20
-  }
+  },
+  "top_corr_pairs": 25,
+  "categorical_columns": ["Sub-Sector Code"],
+  "debug_report": false,
+  "debug_feature": "macro - VIX index (Series)",
+  "debug_symbol_col": "Ticker",
+  "debug_symbol": "AAPL",
+  "debug_output": "debug_report.html",
+  "debug_sample_rows": 200000
 }
