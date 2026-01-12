@@ -94,6 +94,7 @@ def _build_config(args: argparse.Namespace) -> OptunaConfig:
         enable_pruning=pick("enable_pruning", False),
         prune_warmup_steps=pick("prune_warmup_steps", 10),
         prune_interval_steps=pick("prune_interval_steps", 1),
+        param_ranges=pick("param_ranges", None),
     )
 
 

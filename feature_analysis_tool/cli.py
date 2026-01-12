@@ -25,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time-bucket", dest="time_bucket", default=None)
     parser.add_argument("--save-project", action="store_true", help="Save analysis outputs")
     parser.add_argument("--load-project", action="store_true", help="Load existing project outputs")
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Regenerate the report from saved results.json in the output directory",
+    )
     parser.add_argument("--debug", action="store_true", help="Generate debug report")
     return parser
 
@@ -85,10 +90,12 @@ def _build_config(args: argparse.Namespace) -> AnalysisConfig:
 def run_analysis(args: argparse.Namespace) -> None:
     config = _build_config(args)
 
-    if args.load_project:
+    if args.load_project or args.report_only:
         output_dir = config.output_dir
         if not output_dir:
-            raise ValueError("--output or config output_dir is required when using --load-project")
+            raise ValueError(
+                "--output or config output_dir is required when using --load-project or --report-only"
+            )
         results = load_project(output_dir)
         report_path = os.path.join(output_dir, "report.html")
         generate_report(results, report_path)

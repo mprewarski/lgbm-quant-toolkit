@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -25,7 +25,16 @@ body { font-family: "Segoe UI", Arial, sans-serif; margin: 24px; background: var
 .table-wrap { overflow-x: auto; }
 .table { border-collapse: collapse; width: 100%; }
 .table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
-.table th { text-align: left; background: #f1f3f9; position: sticky; top: 0; cursor: pointer; }
+.table th { text-align: left; background: #f1f3f9; position: sticky; top: 0; cursor: pointer; overflow: visible; }
+.th-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.tooltip { position: relative; display: inline-flex; width: 16px; height: 16px; border-radius: 50%; background: #d8dde8; color: #243043; font-size: 11px; align-items: center; justify-content: center; cursor: help; }
+.tooltip::after, .tooltip::before { opacity: 0; transform: translate(-50%, 4px); transition: opacity 60ms ease-out, transform 60ms ease-out; pointer-events: none; }
+.tooltip:hover::after, .tooltip:focus::after { content: attr(data-tip); position: absolute; left: 50%; transform: translate(-50%, 0); bottom: 24px; background: #111827; color: #f9fafb; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.2; white-space: nowrap; box-shadow: 0 8px 16px rgba(0,0,0,0.2); z-index: 20; opacity: 1; }
+.tooltip:hover::before, .tooltip:focus::before { content: ""; position: absolute; left: 50%; transform: translate(-50%, 0); bottom: 18px; border-width: 6px; border-style: solid; border-color: #111827 transparent transparent transparent; z-index: 19; opacity: 1; }
+.glossary { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.glossary-item { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafbff; }
+.glossary-item h4 { margin: 0 0 6px; font-size: 14px; }
+.glossary-item p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .table tr:hover { background: #fafbff; }
 .flag { color: var(--danger); font-weight: 600; }
 .note { color: var(--muted); font-size: 13px; }
@@ -51,6 +60,35 @@ def _format_float(value):
         return str(value)
 
 
+METRIC_TOOLTIPS = {
+    "feature": "Feature name used in training and diagnostics.",
+    "importance_gain": "LightGBM total gain from splits using this feature.",
+    "importance_split": "LightGBM split count using this feature.",
+    "shap_mean_abs": "Mean absolute SHAP value for this feature.",
+    "corr": "Correlation with target (Pearson or Spearman, per data type).",
+    "mutual_info": "Mutual information with the target.",
+    "ic": "Information coefficient (Spearman correlation with target).",
+    "vif": "Variance inflation factor; higher implies multicollinearity.",
+    "psi_max": "Max population stability index across time buckets.",
+    "mean_cv": "Mean coefficient of variation across time buckets.",
+    "leakage_flag": "Flag if correlation/MI exceed leakage thresholds.",
+}
+
+METRIC_GLOSSARY = {
+    "Feature": "Column name used in model training and diagnostics, after any name mapping.",
+    "Gain": "Total LightGBM split gain attributable to the feature. Higher implies stronger impact on loss reduction.",
+    "Split": "Number of times the feature is used in LightGBM splits. High values can indicate broad utility or redundancy.",
+    "SHAP": "Mean absolute SHAP value, reflecting average contribution magnitude per prediction.",
+    "Corr": "Correlation of the feature with the target (Pearson for numeric, Spearman otherwise).",
+    "MI": "Mutual information with the target; captures non-linear dependency beyond correlation.",
+    "IC": "Information coefficient, the Spearman rank correlation with the target.",
+    "VIF": "Variance inflation factor; values above typical thresholds suggest multicollinearity.",
+    "PSI Max": "Maximum population stability index across time buckets; higher values indicate drift.",
+    "Mean CV": "Mean coefficient of variation across time buckets; higher implies less stability.",
+    "Leakage": "Flag for potential leakage when correlation or mutual information exceed thresholds.",
+}
+
+
 def _format_table(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "<p>No features to display.</p>"
@@ -67,7 +105,6 @@ def _format_table(rows: List[Dict[str, Any]]) -> str:
         "vif",
         "psi_max",
         "mean_cv",
-        "iv",
         "leakage_flag",
     ]
     df = df[display_cols]
@@ -87,13 +124,30 @@ def _format_table(rows: List[Dict[str, Any]]) -> str:
         ("vif", "VIF", "number"),
         ("psi_max", "PSI Max", "number"),
         ("mean_cv", "Mean CV", "number"),
-        ("iv", "IV", "number"),
         ("leakage_flag", "Leakage", "text"),
     ]
 
     header_html = "".join(
-        f"<th data-key=\"{key}\" data-type=\"{dtype}\">{label}</th>" for key, label, dtype in headers
+        (
+            f"<th data-key=\"{key}\" data-type=\"{dtype}\">"
+            f"<span class=\"th-wrap\">{label}"
+            f"<span class=\"tooltip\" data-tip=\"{METRIC_TOOLTIPS.get(key, '')}\" "
+            f"title=\"{METRIC_TOOLTIPS.get(key, '')}\" tabindex=\"0\">?</span>"
+            f"</span></th>"
+        )
+        for key, label, dtype in headers
     )
+
+    def _safe_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip().lower() in {"none", "nan", ""}:
+            return None
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            return None
+        return None if pd.isna(num) else num
 
     body_rows = []
     for _, row in df.iterrows():
@@ -112,7 +166,7 @@ def _format_table(rows: List[Dict[str, Any]]) -> str:
                 css = "flag" if leakage_flag else ""
                 cells.append(f"<td class=\"{css}\" data-value=\"{data_val}\">{display}</td>")
                 continue
-            num_val = float(val) if pd.notna(val) else None
+            num_val = _safe_float(val)
             data_val = f"{num_val:.6f}" if num_val is not None else ""
             if key == "importance_gain":
                 pct = 0.0 if not max_gain or num_val is None else max(0.0, (num_val / max_gain) * 100)
@@ -173,26 +227,29 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
             if col in df_plot.columns:
                 df_plot[col] = pd.to_numeric(df_plot[col], errors="coerce")
         df_plot = df_plot.sort_values(by="importance_gain", ascending=False, na_position="last")
-        top_rows = df_plot.head(25)
         plot_payload = {
+            "features_full": df_plot["feature"].tolist(),
+            "importance_gain_full": df_plot.get("importance_gain", pd.Series()).fillna(0).tolist(),
+            "shap_mean_abs_full": df_plot.get("shap_mean_abs", pd.Series()).fillna(0).tolist(),
+            "psi_max_full": df_plot.get("psi_max", pd.Series()).fillna(0).tolist(),
+            "corr_full": df_plot.get("corr", pd.Series()).fillna(0).tolist(),
+        }
+        top_rows = df_plot.head(25)
+        plot_payload.update({
             "features": top_rows["feature"].tolist(),
             "importance_gain": top_rows.get("importance_gain", pd.Series()).fillna(0).tolist(),
             "shap_mean_abs": top_rows.get("shap_mean_abs", pd.Series()).fillna(0).tolist(),
             "psi_max": top_rows.get("psi_max", pd.Series()).fillna(0).tolist(),
             "corr": top_rows.get("corr", pd.Series()).fillna(0).tolist(),
-        }
+        })
         if "importance_gain" in df.columns:
             top_gain = (
                 df.sort_values(by="importance_gain", ascending=False, na_position="last")
                 .head(10)["feature"]
                 .tolist()
             )
-        if "psi_max" in df.columns:
-            top_psi = (
-                df.sort_values(by="psi_max", ascending=False, na_position="last")
-                .head(10)["feature"]
-                .tolist()
-            )
+        if "psi_max" in df_plot.columns:
+            top_psi = df_plot.head(10)["feature"].tolist()
 
     metrics_html = "".join(
         f"<div class=\"metric\"><div>{key}</div><strong>{val}</strong></div>" for key, val in summary.items()
@@ -248,6 +305,13 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
         "vif_threshold": config.get("vif_threshold"),
     }
     plotly_thresholds = json.dumps(thresholds)
+
+    glossary_html = ""
+    if METRIC_GLOSSARY:
+        items = []
+        for key, desc in METRIC_GLOSSARY.items():
+            items.append(f"<div class=\"glossary-item\"><h4>{key}</h4><p>{desc}</p></div>")
+        glossary_html = "<div class=\"glossary\">" + "".join(items) + "</div>"
 
     corr_pairs_html = ""
     if top_corr_pairs:
@@ -319,6 +383,11 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
     <h2>Top Correlated Feature Pairs</h2>
     {corr_pairs_html if corr_pairs_html else '<p class="note">No correlated pairs to display.</p>'}
   </div>
+
+  <div class=\"section\">
+    <h2>Glossary</h2>
+    {glossary_html}
+  </div>
   <script>
     const plotData = {plotly_data};
     const thresholds = {plotly_thresholds};
@@ -328,6 +397,10 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
         return;
       }}
       const features = plotData.features || [];
+      const featuresFull = plotData.features_full || features;
+      const gainFull = plotData.importance_gain_full || plotData.importance_gain || [];
+      const psiFull = plotData.psi_max_full || plotData.psi_max || [];
+      const corrFull = plotData.corr_full || plotData.corr || [];
       Plotly.newPlot("chart-gain", [{{
         type: "bar",
         x: plotData.importance_gain || [],
@@ -367,9 +440,9 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
       Plotly.newPlot("chart-stability", [{{
         type: "scatter",
         mode: "markers",
-        x: plotData.importance_gain || [],
-        y: plotData.psi_max || [],
-        text: features,
+        x: gainFull,
+        y: psiFull,
+        text: featuresFull,
         marker: {{ color: "#1f2430" }}
       }}], {{
         title: "Stability (PSI Max) vs Gain",
@@ -406,9 +479,9 @@ def generate_report(results: Dict[str, Any], output_path: str) -> None:
       Plotly.newPlot("chart-corr", [{{
         type: "scatter",
         mode: "markers",
-        x: plotData.corr || [],
-        y: plotData.importance_gain || [],
-        text: features,
+        x: corrFull,
+        y: gainFull,
+        text: featuresFull,
         marker: {{ color: "#0f4c5c" }}
       }}], {{
         title: "Correlation vs Gain",

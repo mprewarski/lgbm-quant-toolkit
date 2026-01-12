@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -23,3 +23,4 @@ class OptunaConfig:
     enable_pruning: bool = False
     prune_warmup_steps: int = 10
     prune_interval_steps: int = 1
+    param_ranges: Optional[Dict[str, Dict[str, float]]] = None

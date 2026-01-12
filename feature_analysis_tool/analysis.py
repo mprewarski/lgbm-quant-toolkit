@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -15,7 +14,6 @@ from .utils import (
     optional_import,
     percentile_bins,
     sample_df,
-    safe_divide,
 )
 
 
@@ -333,42 +331,6 @@ def compute_stability(
     return stability
 
 
-def compute_woe_iv(
-    feature_df: pd.DataFrame,
-    target: pd.Series,
-    numeric_cols: List[str],
-    target_kind: str,
-) -> Dict[str, Dict[str, float]]:
-    if target_kind != "binary" or len(numeric_cols) == 0:
-        return {}
-
-    target_values = target.values
-    total_good = (target_values == 0).sum()
-    total_bad = (target_values == 1).sum()
-    if total_good == 0 or total_bad == 0:
-        return {}
-
-    woe_iv = {}
-    for col in numeric_cols:
-        values = feature_df[col].values
-        edges = percentile_bins(values, bins=10)
-        if edges is None:
-            continue
-        bins = np.digitize(values, edges[1:-1], right=True)
-        iv_total = 0.0
-        for bin_idx in np.unique(bins):
-            mask = bins == bin_idx
-            good = (target_values[mask] == 0).sum()
-            bad = (target_values[mask] == 1).sum()
-            good_rate = safe_divide(good, total_good)
-            bad_rate = safe_divide(bad, total_bad)
-            if good_rate == 0 or bad_rate == 0:
-                continue
-            woe = math.log(good_rate / bad_rate)
-            iv_total += (good_rate - bad_rate) * woe
-        woe_iv[col] = {"iv": float(iv_total)}
-    return woe_iv
-
 
 def compute_shap(model: Any, feature_df: pd.DataFrame, config: AnalysisConfig) -> Tuple[Dict[str, float], List[str]]:
     notes = []
@@ -427,7 +389,6 @@ def build_feature_table(
     ic: Dict[str, float],
     vif: Dict[str, float],
     stability: Dict[str, Dict[str, float]],
-    woe_iv: Dict[str, Dict[str, float]],
     shap_vals: Dict[str, float],
     leakage: Dict[str, Dict[str, Any]],
     name_mapping: Optional[Dict[str, str]] = None,
@@ -445,7 +406,6 @@ def build_feature_table(
             "vif": vif.get(name),
             "psi_max": stability.get(name, {}).get("psi_max"),
             "mean_cv": stability.get(name, {}).get("mean_cv"),
-            "iv": woe_iv.get(name, {}).get("iv"),
             "shap_mean_abs": shap_vals.get(name),
             "leakage_flag": leakage.get(name, {}).get("flag"),
         }
@@ -516,12 +476,6 @@ class FeatureAnalyzer:
             metadata["numeric_cols"],
             self.config.time_bucket,
         )
-        woe_iv = compute_woe_iv(
-            feature_df,
-            target,
-            metadata["numeric_cols"],
-            metadata["target_kind"],
-        )
         shap_vals, shap_notes = compute_shap(model, feature_df, self.config)
         notes.extend(shap_notes)
 
@@ -540,7 +494,6 @@ class FeatureAnalyzer:
             ic,
             vif,
             stability,
-            woe_iv,
             shap_vals,
             leakage,
             metadata.get("name_mapping"),
@@ -556,7 +509,6 @@ class FeatureAnalyzer:
             "ic": ic,
             "vif": vif,
             "stability": stability,
-            "woe_iv": woe_iv,
             "shap": shap_vals,
             "leakage": leakage,
             "feature_table": feature_table,

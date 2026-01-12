@@ -153,6 +153,15 @@ class OptunaTuner:
         log_path = config.log_path or os.path.join(config.output_dir, "run.log")
         self.logger = setup_logger("optuna_tool", config.log_level, log_path)
 
+    def _param_bounds(self, name: str, default_min: float, default_max: float) -> Tuple[float, float]:
+        ranges = self.config.param_ranges or {}
+        entry = ranges.get(name) or {}
+        min_val = entry.get("min", default_min)
+        max_val = entry.get("max", default_max)
+        if min_val > max_val:
+            raise ValueError(f"Invalid bounds for '{name}': min {min_val} > max {max_val}")
+        return min_val, max_val
+
     def _resolve_storage(self) -> Optional[str]:
         storage_path = self.config.storage_path
         if not storage_path:
@@ -173,17 +182,45 @@ class OptunaTuner:
         num_classes: int,
         metric: str,
     ) -> Tuple[Any, Dict[str, Any]]:
+        learning_rate_min, learning_rate_max = self._param_bounds("learning_rate", 0.01, 0.3)
+        num_leaves_min, num_leaves_max = self._param_bounds("num_leaves", 16, 256)
+        max_depth_min, max_depth_max = self._param_bounds("max_depth", -1, 12)
+        min_child_samples_min, min_child_samples_max = self._param_bounds(
+            "min_child_samples", 5, 100
+        )
+        subsample_min, subsample_max = self._param_bounds("subsample", 0.6, 1.0)
+        colsample_min, colsample_max = self._param_bounds("colsample_bytree", 0.6, 1.0)
+        reg_alpha_min, reg_alpha_max = self._param_bounds("reg_alpha", 1e-3, 10.0)
+        reg_lambda_min, reg_lambda_max = self._param_bounds("reg_lambda", 1e-3, 10.0)
+        min_split_gain_min, min_split_gain_max = self._param_bounds("min_split_gain", 0.0, 1.0)
+        n_estimators_min, n_estimators_max = self._param_bounds("n_estimators", 200, 1200)
         params = {
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "num_leaves": trial.suggest_int("num_leaves", 16, 256),
-            "max_depth": trial.suggest_int("max_depth", -1, 12),
-            "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
-            "min_split_gain": trial.suggest_float("min_split_gain", 0.0, 1.0),
-            "n_estimators": trial.suggest_int("n_estimators", 200, 1200),
+            "learning_rate": trial.suggest_float(
+                "learning_rate", learning_rate_min, learning_rate_max, log=True
+            ),
+            "num_leaves": trial.suggest_int(
+                "num_leaves", int(num_leaves_min), int(num_leaves_max)
+            ),
+            "max_depth": trial.suggest_int(
+                "max_depth", int(max_depth_min), int(max_depth_max)
+            ),
+            "min_child_samples": trial.suggest_int(
+                "min_child_samples", int(min_child_samples_min), int(min_child_samples_max)
+            ),
+            "subsample": trial.suggest_float("subsample", subsample_min, subsample_max),
+            "colsample_bytree": trial.suggest_float(
+                "colsample_bytree", colsample_min, colsample_max
+            ),
+            "reg_alpha": trial.suggest_float("reg_alpha", reg_alpha_min, reg_alpha_max, log=True),
+            "reg_lambda": trial.suggest_float(
+                "reg_lambda", reg_lambda_min, reg_lambda_max, log=True
+            ),
+            "min_split_gain": trial.suggest_float(
+                "min_split_gain", min_split_gain_min, min_split_gain_max
+            ),
+            "n_estimators": trial.suggest_int(
+                "n_estimators", int(n_estimators_min), int(n_estimators_max)
+            ),
             "random_state": self.config.random_state,
             "verbosity": -1,
         }

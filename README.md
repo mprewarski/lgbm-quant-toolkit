@@ -94,7 +94,19 @@ Example `optuna_config.json`:
   "log_path": "optuna_output/run.log",
   "enable_pruning": false,
   "prune_warmup_steps": 10,
-  "prune_interval_steps": 1
+  "prune_interval_steps": 1,
+  "param_ranges": {
+    "learning_rate": { "min": 0.01, "max": 0.3 },
+    "num_leaves": { "min": 16, "max": 256 },
+    "max_depth": { "min": -1, "max": 12 },
+    "min_child_samples": { "min": 5, "max": 100 },
+    "subsample": { "min": 0.6, "max": 1.0 },
+    "colsample_bytree": { "min": 0.6, "max": 1.0 },
+    "reg_alpha": { "min": 0.001, "max": 10.0 },
+    "reg_lambda": { "min": 0.001, "max": 10.0 },
+    "min_split_gain": { "min": 0.0, "max": 1.0 },
+    "n_estimators": { "min": 200, "max": 1200 }
+  }
 }
 ```
 
@@ -147,6 +159,7 @@ Example `optuna_config.json`:
 - `enable_pruning`: Enable Optuna pruning based on intermediate validation metrics.
 - `prune_warmup_steps`: Iterations to wait before pruning starts.
 - `prune_interval_steps`: Pruning check interval in boosting iterations.
+- `param_ranges`: Optional min/max bounds per tuned parameter.
 
 ## CLI usage
 
@@ -164,6 +177,12 @@ To reload a saved project and regenerate the report:
 
 ```bash
 python -m feature_analysis_tool --config feature_analysis_config.json --load-project
+```
+
+To regenerate the report from saved results only:
+
+```bash
+python -m feature_analysis_tool --config feature_analysis_config.json --report-only
 ```
 
 To generate the debug report:

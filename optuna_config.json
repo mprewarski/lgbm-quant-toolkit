@@ -1,11 +1,11 @@
 {
-  "data_path": "sp500-y18-64-zs-dataset.csv",
+  "data_path": "SP500-9MRel-ZsDs-Y-19-64-B.csv",
   "target_col": "TARGET",
   "date_col": "Date",
   "output_dir": "optuna_output",
   "exclude_columns": ["P123 ID", "Ticker"],
   "categorical_columns": ["Sub-Sector Code"],
-  "n_trials": 30,
+  "n_trials": 50,
   "timeout": null,
   "test_size": 0.2,
   "random_state": 42,
@@ -14,6 +14,17 @@
   "study_name": "lgbm_optuna",
   "storage_path": "optuna_output/study.db",
   "log_level": "INFO",
-  "log_path": "optuna_output/run.log"
+  "log_path": "optuna_output/run.log",
+  "param_ranges": {
+    "learning_rate": { "min": 0.005, "max": 0.1 },
+    "num_leaves": { "min": 16, "max": 64},
+    "max_depth": { "min": -1, "max": 12 },
+    "min_child_samples": { "min": 5, "max": 100 },
+    "subsample": { "min": 0.6, "max": 1.0 },
+    "colsample_bytree": { "min": 0.6, "max": 1.0 },
+    "reg_alpha": { "min": 0.001, "max": 10.0 },
+    "reg_lambda": { "min": 0.001, "max": 10.0 },
+    "min_split_gain": { "min": 0.0, "max": 0.5 },
+    "n_estimators": { "min": 400, "max": 1200 }
+  }
 }
-
