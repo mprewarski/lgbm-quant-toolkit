@@ -1,12 +1,17 @@
 {
-  "data_path": "SP500-9MRel-ZsDs-Y-19-64-B.csv",
+  "data_path": "sp500-y-31-62.csv",
   "target_col": "TARGET",
   "date_col": "Date",
   "output_dir": "feature_analysis_output",
-  "sample_rows": 400000,
+  "sample_rows": 380000,
   "time_bucket": "M",
   "random_state": 42,
-  "exclude_columns": ["P123 ID", "Ticker"],
+  "exclude_columns": [
+    "P123 ID", 
+    "Ticker",
+    "TBill 10Y 1M change"
+
+  ],
   "leakage_corr_threshold": 0.9,
   "leakage_mi_quantile": 0.99,
   "vif_threshold": 10.0,
@@ -17,10 +22,10 @@
   "lgbm_params": {
     "n_estimators": 500,
     "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
+    "subsample": 0.7,
+    "colsample_bytree": 0.7,
     "num_leaves": 36,
-    "min_child_samples": 20
+    "min_child_samples": 50
   },
   "top_corr_pairs": 25,
   "categorical_columns": ["Sub-Sector Code"],
@@ -29,5 +34,5 @@
   "debug_symbol_col": "Ticker",
   "debug_symbol": "AAPL",
   "debug_output": "debug_report.html",
-  "debug_sample_rows": 200000
+  "debug_sample_rows": 20000
 }

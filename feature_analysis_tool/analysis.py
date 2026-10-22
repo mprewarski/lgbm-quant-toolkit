@@ -43,11 +43,21 @@ def prepare_features(
     if target_col not in df.columns:
         raise ValueError(f"Target column '{target_col}' not found")
 
+    valid_target = df[target_col].notna().to_numpy()
+    if pd.api.types.is_numeric_dtype(df[target_col]):
+        target_values = df[target_col].to_numpy(dtype=float, na_value=np.nan)
+        valid_target &= np.isfinite(target_values)
+    valid_positions = np.flatnonzero(valid_target)
+    if len(valid_positions) == 0:
+        raise ValueError(f"Target column '{target_col}' contains no valid values")
+
+    dropped_target_rows = len(df) - len(valid_positions)
+    df = df.iloc[valid_positions]
+    target_series, target_kind = coerce_target(df[target_col])
+
     date_series = None
     if date_col and date_col in df.columns:
         date_series = pd.to_datetime(df[date_col], errors="coerce")
-
-    target_series, target_kind = coerce_target(df[target_col])
 
     drop_cols = [target_col]
     if date_col and date_col in df.columns:
@@ -109,6 +119,7 @@ def prepare_features(
         "numeric_cols": numeric_cols,
         "categorical_cols": categorical_cols,
         "constant_cols": constant_cols,
+        "dropped_target_rows": dropped_target_rows,
     }
     if name_mapping:
         metadata["name_mapping"] = name_mapping
@@ -431,6 +442,10 @@ class FeatureAnalyzer:
             self.config.exclude_columns,
             self.config.categorical_columns,
         )
+        if metadata["dropped_target_rows"]:
+            dropped_rows = metadata["dropped_target_rows"]
+            logger.info("Excluded %d rows with missing or non-finite targets", dropped_rows)
+            notes.append(f"Excluded {dropped_rows} rows with missing or non-finite targets")
         if metadata.get("name_mapping"):
             logger.info("Sanitized %d feature names for LightGBM", len(metadata["name_mapping"]))
             notes.append("Sanitized feature names to satisfy LightGBM constraints")

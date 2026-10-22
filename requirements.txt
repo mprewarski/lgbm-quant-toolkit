@@ -8,5 +8,6 @@ seaborn
 lightgbm
 streamlit
 shap
+shapash
 plotly
 optuna

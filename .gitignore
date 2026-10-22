@@ -211,5 +211,6 @@ __marimo__/
 design*.xml
 .DS_Store
 *.csv
+*prompt.xml
 
 

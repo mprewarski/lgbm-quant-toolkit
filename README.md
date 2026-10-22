@@ -1,9 +1,10 @@
 # LightGBM Quant Toolkit
 
-This repo includes two modular tools for LightGBM workflows:
+This repo includes modular tools for LightGBM workflows:
 
 - Feature Analysis Tool: evaluates feature importance, stability, correlation, SHAP contributions, WOE/IV (for binary targets), and flags potential leakage risks.
 - Optuna Hyperparameter Tool: tunes LightGBM hyperparameters with Optuna, evaluates validation performance, and generates an HTML report with study visuals.
+- SHAP Tool: computes SHAP values, ranks features, and produces SHAP visualizations and interaction summaries.
 
 ## Quick Start
 
@@ -29,6 +30,15 @@ python -m optuna_tool --config optuna_config.json
 ```
 
 The report is generated at `optuna_output/report.html`.
+
+5. Run the SHAP tool using a config file:
+
+```bash
+python -m shap_tool --config shap_config.json
+```
+
+Outputs are generated in `shap_output/`.
+The report is generated at `shap_output/report.html`.
 
 ## Configuration
 
@@ -110,6 +120,41 @@ Example `optuna_config.json`:
 }
 ```
 
+Example `shap_config.json`:
+
+```json
+{
+  "data_path": "SP500-9MRel-ZsDs-Y-19-64-B.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "shap_output",
+  "sample_rows": 200000,
+  "shap_sample_rows": 10000,
+  "exclude_columns": ["P123 ID", "Ticker"],
+  "categorical_columns": ["Sub-Sector Code"],
+  "lgbm_params": {
+    "n_estimators": 400,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "num_leaves": 36,
+    "min_child_samples": 20
+  },
+  "train_ratio": 0.7,
+  "val_ratio": 0.15,
+  "test_ratio": 0.15,
+  "train_date_range": null,
+  "val_date_range": null,
+  "test_date_range": null,
+  "gap_days": 5,
+  "interaction_sample_rows": 2000,
+  "dependence_plots": 6,
+  "low_importance_quantile": 0.1,
+  "log_level": "INFO",
+  "log_path": "shap_output/run.log"
+}
+```
+
 ### Config options
 
 - `data_path`: CSV dataset path.
@@ -131,6 +176,7 @@ Example `optuna_config.json`:
 - `lgbm_params`: Dictionary of LightGBM training parameters (overrides defaults).
 - `top_corr_pairs`: Number of top absolute-correlation feature pairs to list.
 - `categorical_columns`: Columns to force as categorical features for LightGBM.
+- Rows with missing or non-finite target values are excluded from feature analysis.
 - `debug_report`: Enable the debug report generation (only runs when `--debug` is passed).
 - `debug_feature`: Feature/column to plot over time.
 - `debug_symbol_col`: Column used to filter a single entity (e.g., `Ticker`).
@@ -160,6 +206,26 @@ Example `optuna_config.json`:
 - `prune_warmup_steps`: Iterations to wait before pruning starts.
 - `prune_interval_steps`: Pruning check interval in boosting iterations.
 - `param_ranges`: Optional min/max bounds per tuned parameter.
+
+### SHAP config options
+
+- `data_path`: CSV dataset path.
+- `target_col`: Target column name.
+- `date_col`: Optional date column; used for time-based splits and date ranges.
+- `model_path`: Optional LightGBM model file path.
+- `output_dir`: Output directory for SHAP outputs.
+- `sample_rows`: Downsample to speed up on large datasets.
+- `shap_sample_rows`: Rows sampled for SHAP calculations.
+- `train_ratio`, `val_ratio`, `test_ratio`: Split ratios when date ranges are not supplied.
+- `train_date_range`, `val_date_range`, `test_date_range`: Optional date ranges in `[start, end]` format.
+- `gap_days`: Gap between train/validation/test splits when using date ordering.
+- `categorical_columns`: Columns to treat as categorical features.
+- `lgbm_params`: Dictionary of LightGBM training parameters.
+- `interaction_sample_rows`: Rows sampled for SHAP interaction values.
+- `dependence_plots`: Number of dependence plots for top features.
+- `low_importance_quantile`: Quantile for low-importance candidates.
+- `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
+- `log_path`: Path for the run log file.
 
 ## CLI usage
 
@@ -195,6 +261,12 @@ Optuna CLI example:
 
 ```bash
 python -m optuna_tool --data sp500-y17-65.csv --target TARGET --trials 75 --metric auc
+```
+
+SHAP CLI example:
+
+```bash
+python -m shap_tool --config shap_config.json
 ```
 
 ## Output
