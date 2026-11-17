@@ -1,6 +1,6 @@
 # Core (versions match the working venv)
 pandas==2.3.3
-numpy==1.26.4
+numpy>=2.3.0
 scipy==1.16.3
 scikit-learn==1.5.2
 statsmodels==0.14.6
