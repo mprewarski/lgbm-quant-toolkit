@@ -15,6 +15,7 @@ config options change.
 feature_analysis_tool/  importance, stability (PSI), correlation/VIF, leakage flags, SHAP
 optuna_tool/            LightGBM hyperparameter search with Optuna
 shap_tool/              SHAP values, dependence/interaction plots, low-importance features
+feature_stats_tool/     per-feature distribution stats, histograms, stats over time, data-quality flags
 p123_client.py          shared P123 API client (credentials from .env)
 data/                   P123 dataset CSVs (gitignored, 100-250 MB each)
 models/<model>/         one folder per model: *_config.json, train prompt XML, outputs/
@@ -29,7 +30,7 @@ All paths in configs are relative to the repo root.
 ## Models
 | Folder | Universe | Target | Dataset(s) |
 |---|---|---|---|
-| `models/sp500` (main model) | S&P 500 (IVV), benchmark SPY | 9MRel = `FutureRel%Chg_D(190, #Bench)`, weekly, 2005–2025 | `data/SP500-9MRel-ZsDs-Y-19-64-B.csv` (Optuna, SHAP); `data/sp500-y-31-62.csv` (feature analysis) |
+| `models/sp500` (main model) | S&P 500 (IVV), benchmark SPY | 9MRel = `FutureRel%Chg_D(190, #Bench)`, weekly, 2005–2025 | `data/SP500-9MRel-ZsDs-Y-19-64-B.csv` (Optuna, SHAP); `data/sp500-y-31-62.csv` (feature analysis); `data/sp500_Y-34-61.csv` (feature stats, newest) |
 | `models/us_smcap_3mtot` | US Small Cap | 3MTot = `Future%Chg_D(65)`, weekly | `data/US_SmCap_3MTot_RankData_S-56-70.csv` |
 | `models/canada` | Canadian stocks | not set yet (planning) | none yet |
 
@@ -56,6 +57,9 @@ Dataset CSV columns: `Date`, `P123 ID`, `Ticker`, features..., `Sub-Sector Code`
 - Never print, log or commit the API key. Credentials live in `.env` (gitignored);
   `.env.example` is the template.
 - P123 API calls use the account's API credits; avoid unnecessary or repeated calls.
+- `Sub-Sector Code` arrives Z-score normalized in the SP500 datasets (values like -0.74, 3.0), not as raw codes,
+  because Skip/Skip features can't be downloaded without a data license. Treat it as categorical anyway.
+- A new dataset: run `feature_stats_tool` on it first to check ranges, missing values and clipping.
 
 ## Environment
 - Python 3.11 venv in `venv/` (macOS). `pip install -r requirements.txt`.

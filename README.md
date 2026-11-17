@@ -5,6 +5,7 @@ This repo includes modular tools for LightGBM workflows:
 - Feature Analysis Tool: evaluates feature importance, stability, correlation, SHAP contributions, WOE/IV (for binary targets), and flags potential leakage risks.
 - Optuna Hyperparameter Tool: tunes LightGBM hyperparameters with Optuna, evaluates validation performance, and generates an HTML report with study visuals.
 - SHAP Tool: computes SHAP values, ranks features, and produces SHAP visualizations and interaction summaries.
+- Feature Stats Tool: per-feature distribution statistics (min, max, std, quantiles, skew, missing values, clipping, drift over time) with histograms and an over-time view for every feature.
 
 Datasets come from Portfolio123 (P123) AI Factor downloads. Each model (stock universe +
 target + feature set) has its own folder under `models/`.
@@ -17,7 +18,7 @@ models/<model>/          configs, P123 training prompt XML, outputs/ (gitignored
   sp500/                 main model: S&P 500, 9-month return relative to SPY
   us_smcap_3mtot/        US small cap, 3-month total return
   canada/                Canadian model (planning)
-feature_analysis_tool/   optuna_tool/   shap_tool/
+feature_analysis_tool/   optuna_tool/   shap_tool/   feature_stats_tool/
 p123_client.py           shared Portfolio123 API client
 docs/                    tool design specs and notes
 scripts/                 one-off helpers (e.g. print_column_values.py)
@@ -29,7 +30,7 @@ Run all commands from the repo root. Paths inside config files are relative to t
 ### Adding a new model
 
 1. Put the P123 dataset CSV in `data/`.
-2. Create `models/<name>/` and copy the three config files from an existing model.
+2. Create `models/<name>/` and copy the config files from an existing model.
 3. Change `data_path`, `output_dir`, `log_path`, and in the Optuna config `storage_path`,
    `study_name` and `gap_days` (at least the target horizon in calendar days).
 
@@ -69,6 +70,23 @@ python -m shap_tool --config models/sp500/shap_config.json
 ```
 
 Outputs are generated in `models/sp500/outputs/shap/`, including `report.html`.
+
+6. Run the feature statistics tool on a dataset:
+
+```bash
+python -m feature_stats_tool --config models/sp500/feature_stats_config.json
+```
+
+Or point it at any CSV without a config:
+
+```bash
+python -m feature_stats_tool --data data/sp500_Y-34-61.csv --output models/sp500/outputs/feature_stats \
+  --exclude "P123 ID,Ticker" --categorical "Sub-Sector Code"
+```
+
+The report is generated at `models/sp500/outputs/feature_stats/report.html`, with
+`stats.csv` (one row per feature) and `results.json` beside it. It uses every row by
+default; a 500k-row, 60-feature dataset takes about 30 seconds and 1.6 GB of memory.
 
 ## Configuration
 
@@ -311,6 +329,25 @@ Example `models/sp500/shap_config.json`:
 - `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
 - `log_path`: Path for the run log file.
 
+### Feature stats config options
+
+- `data_path`, `target_col`, `date_col`, `output_dir`, `log_level`, `log_path`: as for the other tools.
+- `exclude_columns`: Columns to skip (e.g. `P123 ID`, `Ticker`). The date column is always skipped.
+- `categorical_columns`: Columns summarized as category counts instead of numeric stats. Non-numeric columns are treated as categorical automatically.
+- `include_target`: Also show stats for the target column (marked `target`). Default `true`.
+- `sample_rows`: Random row sample; `null` (default) uses all rows.
+- `time_bucket`: Period for the over-time charts (`W`, `M`, `Q`). Default `M`.
+- `hist_bins`: Histogram bins. Default `50`.
+- `hist_clip_quantile`: Clip histogram ranges to the `[q, 1-q]` quantiles (e.g. `0.005`) for raw features with extreme outliers. `0` (default) uses the full min-max range. Stats are never clipped.
+- `top_categories`: Categories shown per categorical feature. Default `30`.
+- Flag thresholds:
+  - `missing_threshold` (default `0.2`): flag `high_missing` above this missing share.
+  - `pileup_threshold` (default `0.10`): flag `pile_up` when more than this share of values sit exactly at the min or max. P123 Z-score clipping usually puts 2-9% at each bound, so the default only flags unusual cases.
+  - `kurtosis_threshold` (default `10`): flag `heavy_tails` above this excess kurtosis.
+  - `low_unique_threshold` (default `20`): tag `discrete` below this many distinct values.
+  - `date_constant_threshold` (default `0.9`): tag `date_constant` (macro/market-level) when every stock has the same value on at least this share of dates.
+  - `drift_threshold` (default `0.5`): flag `drift` when the std of the per-date mean exceeds this share of the overall std, i.e. the feature isn't normalized by date and its level moves over time.
+
 ## CLI usage
 
 ```bash
@@ -364,6 +401,12 @@ Optuna outputs:
 - `outputs/optuna/report.html`: HTML report with study summary and Optuna charts.
 - `outputs/optuna/results.json`: Best parameters and trial summary.
 - `outputs/optuna/study.db`: SQLite Optuna study database.
+
+Feature stats outputs:
+
+- `outputs/feature_stats/report.html`: summary tiles, flag filters, a sortable table with a mini histogram per feature, and per-feature detail (all stats, full histogram with log-scale option, P5/median/P95 and mean over time, missing values over time), plus category counts for categorical features.
+- `outputs/feature_stats/stats.csv`: one row per feature with every statistic and flag.
+- `outputs/feature_stats/results.json`: everything above, including histogram bins and time series. Regenerate the report from it with `--report-only`.
 
 ## Report features
 

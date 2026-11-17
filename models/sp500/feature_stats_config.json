@@ -1,0 +1,23 @@
+{
+  "data_path": "data/sp500_Y-34-61.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "models/sp500/outputs/feature_stats",
+  "exclude_columns": ["P123 ID", "Ticker"],
+  "categorical_columns": ["Sub-Sector Code"],
+  "include_target": true,
+  "sample_rows": null,
+  "random_state": 42,
+  "time_bucket": "M",
+  "hist_bins": 50,
+  "hist_clip_quantile": 0.0,
+  "top_categories": 30,
+  "missing_threshold": 0.2,
+  "pileup_threshold": 0.10,
+  "kurtosis_threshold": 10.0,
+  "low_unique_threshold": 20,
+  "date_constant_threshold": 0.9,
+  "drift_threshold": 0.5,
+  "log_level": "INFO",
+  "log_path": "models/sp500/outputs/feature_stats/run.log"
+}
