@@ -1,0 +1,67 @@
+{
+  "data_path": "data/SP500-9MRel-ZsDs-Y-19-64-B.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "models/sp500/outputs/optuna",
+  "exclude_columns": [
+    "P123 ID",
+    "Ticker"
+  ],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
+  "n_trials": 50,
+  "timeout": null,
+  "test_size": 0.2,
+  "split_method": "time",
+  "gap_days": 280,
+  "random_state": 42,
+  "metric": "rmse",
+  "direction": null,
+  "study_name": "sp500_9mrel_timesplit",
+  "storage_path": "models/sp500/outputs/optuna/study.db",
+  "log_level": "INFO",
+  "log_path": "models/sp500/outputs/optuna/run.log",
+  "param_ranges": {
+    "learning_rate": {
+      "min": 0.005,
+      "max": 0.1
+    },
+    "num_leaves": {
+      "min": 16,
+      "max": 64
+    },
+    "max_depth": {
+      "min": -1,
+      "max": 12
+    },
+    "min_child_samples": {
+      "min": 5,
+      "max": 100
+    },
+    "subsample": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "colsample_bytree": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "reg_alpha": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "reg_lambda": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "min_split_gain": {
+      "min": 0.0,
+      "max": 0.5
+    },
+    "n_estimators": {
+      "min": 400,
+      "max": 1200
+    }
+  }
+}

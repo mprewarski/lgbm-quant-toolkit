@@ -13,6 +13,8 @@ class OptunaConfig:
     n_trials: int = 50
     timeout: Optional[int] = None
     test_size: float = 0.2
+    split_method: str = "time"
+    gap_days: int = 0
     random_state: int = 42
     metric: Optional[str] = None
     direction: Optional[str] = None

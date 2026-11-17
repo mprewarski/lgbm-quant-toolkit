@@ -6,6 +6,33 @@ This repo includes modular tools for LightGBM workflows:
 - Optuna Hyperparameter Tool: tunes LightGBM hyperparameters with Optuna, evaluates validation performance, and generates an HTML report with study visuals.
 - SHAP Tool: computes SHAP values, ranks features, and produces SHAP visualizations and interaction summaries.
 
+Datasets come from Portfolio123 (P123) AI Factor downloads. Each model (stock universe +
+target + feature set) has its own folder under `models/`.
+
+## Project layout
+
+```
+data/                    P123 dataset CSVs (gitignored)
+models/<model>/          configs, P123 training prompt XML, outputs/ (gitignored)
+  sp500/                 main model: S&P 500, 9-month return relative to SPY
+  us_smcap_3mtot/        US small cap, 3-month total return
+  canada/                Canadian model (planning)
+feature_analysis_tool/   optuna_tool/   shap_tool/
+p123_client.py           shared Portfolio123 API client
+docs/                    tool design specs and notes
+scripts/                 one-off helpers (e.g. print_column_values.py)
+tests/                   pytest tests
+```
+
+Run all commands from the repo root. Paths inside config files are relative to the repo root.
+
+### Adding a new model
+
+1. Put the P123 dataset CSV in `data/`.
+2. Create `models/<name>/` and copy the three config files from an existing model.
+3. Change `data_path`, `output_dir`, `log_path`, and in the Optuna config `storage_path`,
+   `study_name` and `gap_days` (at least the target horizon in calendar days).
+
 ## Quick Start
 
 1. Create and activate a virtual environment.
@@ -15,123 +42,173 @@ This repo includes modular tools for LightGBM workflows:
 pip install -r requirements.txt
 ```
 
+   Optional, for the Portfolio123 API: copy `.env.example` to `.env`, fill in
+   `P123_API_ID` and `P123_API_KEY`, then check them with `python -m p123_client`
+   (see [Portfolio123 API](#portfolio123-api)).
+
 3. Run the feature analysis using a config file:
 
 ```bash
-python -m feature_analysis_tool --config feature_analysis_config.json --save-project
+python -m feature_analysis_tool --config models/sp500/feature_analysis_config.json --save-project
 ```
 
-The report is generated at `feature_analysis_output/report.html`.
+The report is generated at `models/sp500/outputs/feature_analysis/report.html`.
 
 4. Run the Optuna hyperparameter search using a config file:
 
 ```bash
-python -m optuna_tool --config optuna_config.json
+python -m optuna_tool --config models/sp500/optuna_config.json
 ```
 
-The report is generated at `optuna_output/report.html`.
+The report is generated at `models/sp500/outputs/optuna/report.html`.
 
 5. Run the SHAP tool using a config file:
 
 ```bash
-python -m shap_tool --config shap_config.json
+python -m shap_tool --config models/sp500/shap_config.json
 ```
 
-Outputs are generated in `shap_output/`.
-The report is generated at `shap_output/report.html`.
+Outputs are generated in `models/sp500/outputs/shap/`, including `report.html`.
 
 ## Configuration
 
 The tool reads a JSON or YAML config. CLI flags override config values.
 
-Example `feature_analysis_config.json`:
+Example `models/sp500/feature_analysis_config.json`:
 
 ```json
 {
-  "data_path": "sp500-Y-18-64-RankDate-20Y.csv",
+  "data_path": "data/sp500-y-31-62.csv",
   "target_col": "TARGET",
   "date_col": "Date",
-  "output_dir": "feature_analysis_output",
-  "sample_rows": 50000,
+  "output_dir": "models/sp500/outputs/feature_analysis",
+  "sample_rows": 380000,
   "time_bucket": "M",
   "random_state": 42,
-  "exclude_columns": ["P123 ID", "Ticker"],
+  "exclude_columns": [
+    "P123 ID",
+    "Ticker",
+    "TBill 10Y 1M change"
+  ],
   "leakage_corr_threshold": 0.9,
   "leakage_mi_quantile": 0.99,
   "vif_threshold": 10.0,
   "stability_psi_threshold": 0.2,
-  "shap_sample_rows": 2000,
+  "shap_sample_rows": 10000,
   "log_level": "INFO",
-  "log_path": "feature_analysis_output/run.log",
+  "log_path": "models/sp500/outputs/feature_analysis/run.log",
   "lgbm_params": {
-    "n_estimators": 300,
+    "n_estimators": 500,
     "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "num_leaves": 31,
-    "min_child_samples": 20
+    "subsample": 0.7,
+    "colsample_bytree": 0.7,
+    "num_leaves": 36,
+    "min_child_samples": 50
   },
   "top_corr_pairs": 25,
-  "categorical_columns": ["Sub-Sector Code"],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
   "debug_report": false,
   "debug_feature": "macro - VIX index (Series)",
   "debug_symbol_col": "Ticker",
   "debug_symbol": "AAPL",
   "debug_output": "debug_report.html",
-  "debug_sample_rows": 200000
+  "debug_sample_rows": 20000
 }
 ```
 
-Example `optuna_config.json`:
+Example `models/sp500/optuna_config.json`:
 
 ```json
 {
-  "data_path": "sp500-y17-65.csv",
+  "data_path": "data/SP500-9MRel-ZsDs-Y-19-64-B.csv",
   "target_col": "TARGET",
   "date_col": "Date",
-  "output_dir": "optuna_output",
-  "exclude_columns": ["P123 ID", "Ticker"],
-  "categorical_columns": ["Sub-Sector Code"],
+  "output_dir": "models/sp500/outputs/optuna",
+  "exclude_columns": [
+    "P123 ID",
+    "Ticker"
+  ],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
   "n_trials": 50,
   "timeout": null,
   "test_size": 0.2,
+  "split_method": "time",
+  "gap_days": 280,
   "random_state": 42,
-  "metric": null,
+  "metric": "rmse",
   "direction": null,
-  "study_name": "lgbm_optuna",
-  "storage_path": "optuna_output/study.db",
+  "study_name": "sp500_9mrel_timesplit",
+  "storage_path": "models/sp500/outputs/optuna/study.db",
   "log_level": "INFO",
-  "log_path": "optuna_output/run.log",
-  "enable_pruning": false,
-  "prune_warmup_steps": 10,
-  "prune_interval_steps": 1,
+  "log_path": "models/sp500/outputs/optuna/run.log",
   "param_ranges": {
-    "learning_rate": { "min": 0.01, "max": 0.3 },
-    "num_leaves": { "min": 16, "max": 256 },
-    "max_depth": { "min": -1, "max": 12 },
-    "min_child_samples": { "min": 5, "max": 100 },
-    "subsample": { "min": 0.6, "max": 1.0 },
-    "colsample_bytree": { "min": 0.6, "max": 1.0 },
-    "reg_alpha": { "min": 0.001, "max": 10.0 },
-    "reg_lambda": { "min": 0.001, "max": 10.0 },
-    "min_split_gain": { "min": 0.0, "max": 1.0 },
-    "n_estimators": { "min": 200, "max": 1200 }
+    "learning_rate": {
+      "min": 0.005,
+      "max": 0.1
+    },
+    "num_leaves": {
+      "min": 16,
+      "max": 64
+    },
+    "max_depth": {
+      "min": -1,
+      "max": 12
+    },
+    "min_child_samples": {
+      "min": 5,
+      "max": 100
+    },
+    "subsample": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "colsample_bytree": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "reg_alpha": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "reg_lambda": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "min_split_gain": {
+      "min": 0.0,
+      "max": 0.5
+    },
+    "n_estimators": {
+      "min": 400,
+      "max": 1200
+    }
   }
 }
 ```
 
-Example `shap_config.json`:
+Example `models/sp500/shap_config.json`:
 
 ```json
 {
-  "data_path": "SP500-9MRel-ZsDs-Y-19-64-B.csv",
+  "data_path": "data/SP500-9MRel-ZsDs-Y-19-64-B.csv",
   "target_col": "TARGET",
   "date_col": "Date",
-  "output_dir": "shap_output",
+  "output_dir": "models/sp500/outputs/shap",
+  "model_path": null,
   "sample_rows": 200000,
   "shap_sample_rows": 10000,
-  "exclude_columns": ["P123 ID", "Ticker"],
-  "categorical_columns": ["Sub-Sector Code"],
+  "random_state": 42,
+  "exclude_columns": [
+    "P123 ID",
+    "Ticker"
+  ],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
   "lgbm_params": {
     "n_estimators": 400,
     "learning_rate": 0.05,
@@ -146,12 +223,17 @@ Example `shap_config.json`:
   "train_date_range": null,
   "val_date_range": null,
   "test_date_range": null,
-  "gap_days": 5,
+  "gap_days": 280,
+  "shap_class_index": null,
   "interaction_sample_rows": 2000,
+  "top_features": 20,
   "dependence_plots": 6,
   "low_importance_quantile": 0.1,
+  "low_importance_threshold": null,
+  "force_index": 0,
+  "top_interactions": 30,
   "log_level": "INFO",
-  "log_path": "shap_output/run.log"
+  "log_path": "models/sp500/outputs/shap/run.log"
 }
 ```
 
@@ -194,11 +276,13 @@ Example `shap_config.json`:
 - `categorical_columns`: Columns to treat as categorical features.
 - `n_trials`: Number of Optuna trials to run.
 - `timeout`: Optional max runtime in seconds.
-- `test_size`: Validation split fraction.
-- `random_state`: Random seed for data split and LightGBM.
+- `test_size`: Fraction of the most recent dates used for validation (or of rows, with `split_method: "random"`).
+- `split_method`: `"time"` (default) splits by date: the last `test_size` share of dates is validation, and training stops `gap_days` before it. Requires `date_col`. `"random"` is a shuffled split and leaks future returns on stock panel data; use it only for non-time-series datasets.
+- `gap_days`: Calendar days between the end of training and the start of validation. Set it to at least the target horizon (about 280 for a 9-month target, 100 for a 3-month target).
+- `random_state`: Random seed for LightGBM (and the split when `split_method` is `"random"`).
 - `metric`: Override metric (`auc`, `logloss`, `multi_logloss`, `accuracy`, `rmse`, `mae`, `mse`, `r2`).
 - `direction`: Override optimization direction (`maximize` or `minimize`).
-- `study_name`: Optuna study name.
+- `study_name`: Optuna study name. Use a new name whenever the data, target or split changes; an existing study with the same name is resumed and its old trials are mixed in.
 - `storage_path`: SQLite path for Optuna study storage.
 - `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
 - `log_path`: Path for the run log file.
@@ -218,7 +302,7 @@ Example `shap_config.json`:
 - `shap_sample_rows`: Rows sampled for SHAP calculations.
 - `train_ratio`, `val_ratio`, `test_ratio`: Split ratios when date ranges are not supplied.
 - `train_date_range`, `val_date_range`, `test_date_range`: Optional date ranges in `[start, end]` format.
-- `gap_days`: Gap between train/validation/test splits when using date ordering.
+- `gap_days`: Calendar days between train/validation/test splits when using date ordering. Set it to at least the target horizon.
 - `categorical_columns`: Columns to treat as categorical features.
 - `lgbm_params`: Dictionary of LightGBM training parameters.
 - `interaction_sample_rows`: Rows sampled for SHAP interaction values.
@@ -230,43 +314,43 @@ Example `shap_config.json`:
 ## CLI usage
 
 ```bash
-python -m feature_analysis_tool --data sp500-y17-65.csv --target TARGET --date Date
+python -m feature_analysis_tool --data data/SP500-9MRel-ZsDs-Y-19-64-B.csv --target TARGET --date Date
 ```
 
 You can also use a config file and override fields:
 
 ```bash
-python -m feature_analysis_tool --config feature_analysis_config.json --sample-rows 20000
+python -m feature_analysis_tool --config models/sp500/feature_analysis_config.json --sample-rows 20000
 ```
 
 To reload a saved project and regenerate the report:
 
 ```bash
-python -m feature_analysis_tool --config feature_analysis_config.json --load-project
+python -m feature_analysis_tool --config models/sp500/feature_analysis_config.json --load-project
 ```
 
 To regenerate the report from saved results only:
 
 ```bash
-python -m feature_analysis_tool --config feature_analysis_config.json --report-only
+python -m feature_analysis_tool --config models/sp500/feature_analysis_config.json --report-only
 ```
 
 To generate the debug report:
 
 ```bash
-python -m feature_analysis_tool --config feature_analysis_config.json --save-project --debug
+python -m feature_analysis_tool --config models/sp500/feature_analysis_config.json --save-project --debug
 ```
 
 Optuna CLI example:
 
 ```bash
-python -m optuna_tool --data sp500-y17-65.csv --target TARGET --trials 75 --metric auc
+python -m optuna_tool --data data/SP500-9MRel-ZsDs-Y-19-64-B.csv --target TARGET --date Date --gap-days 280 --trials 75 --metric rmse
 ```
 
 SHAP CLI example:
 
 ```bash
-python -m shap_tool --config shap_config.json
+python -m shap_tool --config models/sp500/shap_config.json
 ```
 
 ## Output
@@ -277,9 +361,9 @@ python -m shap_tool --config shap_config.json
 
 Optuna outputs:
 
-- `optuna_output/report.html`: HTML report with study summary and Optuna charts.
-- `optuna_output/results.json`: Best parameters and trial summary.
-- `optuna_output/study.db`: SQLite Optuna study database.
+- `outputs/optuna/report.html`: HTML report with study summary and Optuna charts.
+- `outputs/optuna/results.json`: Best parameters and trial summary.
+- `outputs/optuna/study.db`: SQLite Optuna study database.
 
 ## Report features
 
@@ -297,4 +381,33 @@ Optuna outputs:
 
 - SHAP, statsmodels, scipy, and sklearn are optional but recommended for full metrics.
 - If Plotly JS fails to load (offline environments), charts will be skipped but the report still renders.
-- For interactive Optuna dashboards, install and run `optuna-dashboard` against `optuna_output/study.db`.
+- For interactive Optuna dashboards, run `optuna-dashboard sqlite:///models/sp500/outputs/optuna/study.db`.
+
+## Portfolio123 API
+
+`p123_client.py` gives every script the same authenticated
+[`p123api`](https://pypi.org/project/p123api/) client:
+
+```python
+from p123_client import get_client
+
+with get_client() as client:
+    preds = client.aifactor_predict(predictor_id, params, to_pandas=True)
+```
+
+Credentials come from `P123_API_ID` and `P123_API_KEY`, either exported in your shell or
+set in `.env` at the repo root (gitignored; copy `.env.example`). Check them with:
+
+```bash
+python -m p123_client
+```
+
+API calls use your P123 API credits. Without a P123 data license, dataset downloads fail
+for features whose step 1 and step 2 normalization are both Skip
+(see `docs/p123_dataset_download_note.txt`).
+
+## Tests
+
+```bash
+python -m pytest tests
+```

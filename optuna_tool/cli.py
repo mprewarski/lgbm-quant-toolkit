@@ -21,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trials", dest="n_trials", type=int, default=None, help="Number of Optuna trials")
     parser.add_argument("--timeout", dest="timeout", type=int, default=None, help="Optuna timeout in seconds")
     parser.add_argument("--test-size", dest="test_size", type=float, default=None)
+    parser.add_argument("--split-method", dest="split_method", choices=["time", "random"], default=None)
+    parser.add_argument("--gap-days", dest="gap_days", type=int, default=None)
     parser.add_argument("--random-state", dest="random_state", type=int, default=None)
     parser.add_argument("--metric", dest="metric", default=None)
     parser.add_argument("--direction", dest="direction", default=None)
@@ -84,6 +86,8 @@ def _build_config(args: argparse.Namespace) -> OptunaConfig:
         n_trials=pick("n_trials", 50),
         timeout=pick("timeout", None),
         test_size=pick("test_size", 0.2),
+        split_method=pick("split_method", "time"),
+        gap_days=pick("gap_days", 0),
         random_state=pick("random_state", 42),
         metric=pick("metric", None),
         direction=pick("direction", None),

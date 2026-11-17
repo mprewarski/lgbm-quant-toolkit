@@ -131,11 +131,53 @@ def _split_data(
     target_kind: str,
     test_size: float,
     random_state: int,
+    date_series: Optional[pd.Series] = None,
+    gap_days: int = 0,
+    split_method: str = "time",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Split into train/validation sets.
+
+    split_method="time" (default when a date column is available) puts the most
+    recent ``test_size`` fraction of dates in validation and drops training rows
+    whose date falls within ``gap_days`` of the first validation date. The gap
+    should be at least the target horizon (e.g. ~270 calendar days for a 9-month
+    forward return) so training targets don't overlap the validation period.
+
+    split_method="random" uses a shuffled split. This leaks future information
+    on panel stock data with forward-return targets and is kept only for
+    non-time-series datasets.
+    """
     if test_size is None:
         test_size = 0.2
     if not 0.0 < test_size < 1.0:
         raise ValueError("test_size must be between 0 and 1.")
+    if split_method not in {"time", "random"}:
+        raise ValueError("split_method must be 'time' or 'random'.")
+
+    if split_method == "time":
+        if date_series is None:
+            raise ValueError(
+                "split_method='time' requires date_col. Set date_col, or set "
+                "split_method='random' for non-time-series data."
+            )
+        dates = pd.to_datetime(date_series.loc[features.index], errors="coerce")
+        if dates.isna().all():
+            raise ValueError("date_col could not be parsed as dates.")
+        unique_dates = np.sort(dates.dropna().unique())
+        n_valid_dates = max(1, int(round(len(unique_dates) * test_size)))
+        valid_start = pd.Timestamp(unique_dates[-n_valid_dates])
+        train_end = valid_start - pd.Timedelta(days=max(0, int(gap_days or 0)))
+        train_mask = (dates < train_end).to_numpy()
+        valid_mask = (dates >= valid_start).to_numpy()
+        if train_mask.sum() == 0:
+            raise ValueError("No training rows left after applying gap_days; reduce gap_days or test_size.")
+        return (
+            features.loc[train_mask],
+            features.loc[valid_mask],
+            target.loc[train_mask],
+            target.loc[valid_mask],
+        )
+
     stratify = target if target_kind in {"binary", "categorical"} else None
     return train_test_split(
         features,
@@ -303,6 +345,16 @@ class OptunaTuner:
             target_kind,
             config.test_size,
             config.random_state,
+            date_series=df[config.date_col] if config.date_col and config.date_col in df.columns else None,
+            gap_days=config.gap_days,
+            split_method=config.split_method,
+        )
+        self.logger.info(
+            "Split method=%s gap_days=%s: %d train rows, %d validation rows",
+            config.split_method,
+            config.gap_days,
+            len(x_train),
+            len(x_valid),
         )
 
         storage_uri = self._resolve_storage()

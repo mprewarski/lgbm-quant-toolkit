@@ -1,0 +1,67 @@
+{
+  "data_path": "data/US_SmCap_3MTot_RankData_S-56-70.csv",
+  "target_col": "TARGET",
+  "date_col": "Date",
+  "output_dir": "models/us_smcap_3mtot/outputs/optuna",
+  "exclude_columns": [
+    "P123 ID",
+    "Ticker"
+  ],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
+  "n_trials": 50,
+  "timeout": null,
+  "test_size": 0.2,
+  "split_method": "time",
+  "gap_days": 100,
+  "random_state": 42,
+  "metric": "rmse",
+  "direction": null,
+  "study_name": "us_smcap_3mtot_timesplit",
+  "storage_path": "models/us_smcap_3mtot/outputs/optuna/study.db",
+  "log_level": "INFO",
+  "log_path": "models/us_smcap_3mtot/outputs/optuna/run.log",
+  "param_ranges": {
+    "learning_rate": {
+      "min": 0.005,
+      "max": 0.1
+    },
+    "num_leaves": {
+      "min": 16,
+      "max": 64
+    },
+    "max_depth": {
+      "min": -1,
+      "max": 12
+    },
+    "min_child_samples": {
+      "min": 5,
+      "max": 100
+    },
+    "subsample": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "colsample_bytree": {
+      "min": 0.6,
+      "max": 1.0
+    },
+    "reg_alpha": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "reg_lambda": {
+      "min": 0.001,
+      "max": 10.0
+    },
+    "min_split_gain": {
+      "min": 0.0,
+      "max": 0.5
+    },
+    "n_estimators": {
+      "min": 400,
+      "max": 1200
+    }
+  }
+}

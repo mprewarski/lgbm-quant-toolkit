@@ -1,16 +1,14 @@
 {
-  "data_path": "sp500-y-31-62.csv",
+  "data_path": "data/US_SmCap_3MTot_RankData_S-56-70.csv",
   "target_col": "TARGET",
   "date_col": "Date",
-  "output_dir": "feature_analysis_output",
+  "output_dir": "models/us_smcap_3mtot/outputs/feature_analysis",
   "sample_rows": 380000,
   "time_bucket": "M",
   "random_state": 42,
   "exclude_columns": [
-    "P123 ID", 
-    "Ticker",
-    "TBill 10Y 1M change"
-
+    "P123 ID",
+    "Ticker"
   ],
   "leakage_corr_threshold": 0.9,
   "leakage_mi_quantile": 0.99,
@@ -18,7 +16,7 @@
   "stability_psi_threshold": 0.2,
   "shap_sample_rows": 10000,
   "log_level": "INFO",
-  "log_path": "feature_analysis_output/run.log",
+  "log_path": "models/us_smcap_3mtot/outputs/feature_analysis/run.log",
   "lgbm_params": {
     "n_estimators": 500,
     "learning_rate": 0.05,
@@ -28,7 +26,9 @@
     "min_child_samples": 50
   },
   "top_corr_pairs": 25,
-  "categorical_columns": ["Sub-Sector Code"],
+  "categorical_columns": [
+    "Sub-Sector Code"
+  ],
   "debug_report": false,
   "debug_feature": "macro - VIX index (Series)",
   "debug_symbol_col": "Ticker",

@@ -213,4 +213,6 @@ design*.xml
 *.csv
 *prompt.xml
 
-
+# Datasets and per-model outputs
+data/
+models/*/outputs/
