@@ -27,7 +27,8 @@ body { font-family: "Segoe UI", Arial, sans-serif; margin: 24px; background: var
 .table th { text-align: left; background: #f1f5f9; position: sticky; top: 0; }
 .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef2f7; color: var(--muted); margin-right: 6px; }
 .note { color: var(--muted); font-size: 13px; }
-.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.chart { margin-top: 16px; }
+.slice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; }
 """
 
 
@@ -69,12 +70,25 @@ def _render_trials(trials: List[Dict[str, Any]], limit: int = 25) -> str:
     )
 
 
+def _fig_html(fig, height: int, include_plotlyjs) -> str:
+    from plotly.io import to_html
+
+    fig.update_layout(height=height, autosize=True, title=None, margin=dict(l=60, r=30, t=30, b=50))
+    return to_html(
+        fig,
+        include_plotlyjs=include_plotlyjs,
+        full_html=False,
+        default_width="100%",
+        default_height=f"{height}px",
+        config={"responsive": True, "displaylogo": False},
+    )
+
+
 def _plot_sections(study: optuna.Study) -> Tuple[str, List[str]]:
     plotly_mod, plotly_err = optional_import("plotly")
     if plotly_mod is None:
         return "", [f"Plotly not available: {plotly_err}"]
 
-    from plotly.io import to_html
     from optuna.visualization import (
         plot_optimization_history,
         plot_param_importances,
@@ -82,21 +96,54 @@ def _plot_sections(study: optuna.Study) -> Tuple[str, List[str]]:
         plot_slice,
     )
 
-    charts = [
-        ("Optimization History", plot_optimization_history(study)),
-        ("Parameter Importances", plot_param_importances(study)),
-        ("Parallel Coordinate", plot_parallel_coordinate(study)),
-        ("Slice Plot", plot_slice(study)),
-    ]
+    completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if not completed:
+        return "", ["No completed trials to chart."]
+    param_names = sorted({name for t in completed for name in t.params})
 
-    chart_blocks = []
-    include_plotly = "cdn"
-    for title, fig in charts:
-        html = to_html(fig, include_plotlyjs=include_plotly, full_html=False)
-        include_plotly = False
-        chart_blocks.append(f"<div><h3>{title}</h3>{html}</div>")
+    blocks = []
+    notes: List[str] = []
+    include_js = "cdn"
 
-    return "<div class=\"chart-grid\">" + "".join(chart_blocks) + "</div>", []
+    def add(title: str, make_fig, height: int, note: str = "") -> None:
+        nonlocal include_js
+        try:
+            fig = make_fig()
+        except Exception as exc:  # e.g. importances need >1 completed trial
+            notes.append(f"{title} unavailable: {exc}")
+            return
+        note_html = f"<p class=\"note\">{note}</p>" if note else ""
+        blocks.append(f"<div class=\"chart\"><h3>{title}</h3>{note_html}{_fig_html(fig, height, include_js)}</div>")
+        include_js = False
+
+    add("Optimization History", lambda: plot_optimization_history(study), 420)
+    add(
+        "Parameter Importances",
+        lambda: plot_param_importances(study),
+        max(320, 40 * len(param_names) + 120),
+        "fANOVA importance of each parameter for the objective value.",
+    )
+    add("Parallel Coordinate", lambda: plot_parallel_coordinate(study), 520)
+
+    slice_blocks = []
+    for name in param_names:
+        try:
+            fig = plot_slice(study, params=[name])
+        except Exception as exc:
+            notes.append(f"Slice plot for {name} unavailable: {exc}")
+            continue
+        fig.update_layout(showlegend=False)
+        fig.update_xaxes(title_text=name)
+        slice_blocks.append(f"<div>{_fig_html(fig, 320, include_js)}</div>")
+        include_js = False
+    if slice_blocks:
+        blocks.append(
+            "<div class=\"chart\"><h3>Slice Plots</h3>"
+            "<p class=\"note\">Objective value of each trial against one parameter; darker points are later trials.</p>"
+            f"<div class=\"slice-grid\">{''.join(slice_blocks)}</div></div>"
+        )
+
+    return "".join(blocks), notes
 
 
 def generate_report(results: Dict[str, Any], study: Optional[optuna.Study], output_path: str) -> None:
@@ -105,8 +152,10 @@ def generate_report(results: Dict[str, Any], study: Optional[optuna.Study], outp
     metadata = results.get("metadata", {})
     trials = results.get("trials", [])
 
+    best_value = study_meta.get("best_value")
+    baseline_value = study_meta.get("baseline_value")
     summary = {
-        "Best value": _format_value(study_meta.get("best_value")),
+        "Best value": _format_value(best_value),
         "Metric": study_meta.get("metric", ""),
         "Direction": study_meta.get("direction", ""),
         "Trials": study_meta.get("n_trials", 0),
@@ -114,6 +163,13 @@ def generate_report(results: Dict[str, Any], study: Optional[optuna.Study], outp
         "Columns": dataset.get("columns", 0),
         "Target kind": metadata.get("target_kind", ""),
     }
+    if baseline_value is not None:
+        summary["Baseline (train mean)"] = _format_value(baseline_value)
+        if best_value is not None and baseline_value:
+            improvement = (baseline_value - best_value) / abs(baseline_value) * 100
+            if study_meta.get("direction") == "maximize":
+                improvement = -improvement
+            summary["Improvement vs baseline"] = f"{improvement:.2f}%"
 
     metrics_html = "".join(
         f"<div class=\"metric\"><div>{key}</div><strong>{value}</strong></div>"
@@ -137,7 +193,7 @@ def generate_report(results: Dict[str, Any], study: Optional[optuna.Study], outp
     if name_mapping:
         mapping_note = "<p class=\"note\">Column names were sanitized for LightGBM. See results.json for mapping.</p>"
 
-    html = f"""
+    html = f"""<!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8" />
@@ -166,6 +222,7 @@ def generate_report(results: Dict[str, Any], study: Optional[optuna.Study], outp
         <h2>Optimization Charts</h2>
         {chart_html}
         {notes_html}
+        <p class="note">For interactive exploration: <code>optuna-dashboard sqlite:///{results.get('config', {}).get('storage_path') or 'path/to/study.db'}</code></p>
       </div>
     </body>
     </html>

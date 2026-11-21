@@ -357,6 +357,14 @@ class OptunaTuner:
             len(x_valid),
         )
 
+        baseline_value = None
+        if target_kind == "numeric":
+            # Score of always predicting the training mean. Lets scores from datasets with
+            # different target scales (Z-score vs min-max) be compared as % improvement.
+            baseline_preds = np.full(len(y_valid), float(y_train.mean()))
+            baseline_value = float(_evaluate_metric(metric, target_kind, y_valid, baseline_preds, None))
+            self.logger.info("Baseline %s (predict train mean): %.6f", metric, baseline_value)
+
         storage_uri = self._resolve_storage()
         pruner = None
         if config.enable_pruning:
@@ -410,6 +418,7 @@ class OptunaTuner:
                 "metric": metric,
                 "n_trials": len(study.trials),
                 "best_value": study.best_value,
+                "baseline_value": baseline_value,
                 "best_params": study.best_params,
             },
             "dataset": {

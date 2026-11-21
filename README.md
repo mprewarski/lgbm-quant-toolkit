@@ -5,6 +5,8 @@ This repo includes modular tools for LightGBM workflows:
 - Feature Analysis Tool: evaluates feature importance, stability, correlation, SHAP contributions, WOE/IV (for binary targets), and flags potential leakage risks.
 - Optuna Hyperparameter Tool: tunes LightGBM hyperparameters with Optuna, evaluates validation performance, and generates an HTML report with study visuals.
 - SHAP Tool: computes SHAP values, ranks features, and produces SHAP visualizations and interaction summaries.
+- Feature Stats Tool: per-feature distribution statistics (min, max, std, quantiles, skew, missing values, clipping, drift over time) with histograms and an over-time view for every feature.
+- Train Tool: trains LightGBM the way P123 AI Factor validation does (rolling time series CV with a gap, several runs per model with different seeds) and reports RMSE, Spearman and High/Low/H-L quantile stats per run and averaged over runs.
 
 Datasets come from Portfolio123 (P123) AI Factor downloads. Each model (stock universe +
 target + feature set) has its own folder under `models/`.
@@ -17,7 +19,7 @@ models/<model>/          configs, P123 training prompt XML, outputs/ (gitignored
   sp500/                 main model: S&P 500, 9-month return relative to SPY
   us_smcap_3mtot/        US small cap, 3-month total return
   canada/                Canadian model (planning)
-feature_analysis_tool/   optuna_tool/   shap_tool/
+feature_analysis_tool/   optuna_tool/   shap_tool/   feature_stats_tool/   train_tool/
 p123_client.py           shared Portfolio123 API client
 docs/                    tool design specs and notes
 scripts/                 one-off helpers (e.g. print_column_values.py)
@@ -29,7 +31,7 @@ Run all commands from the repo root. Paths inside config files are relative to t
 ### Adding a new model
 
 1. Put the P123 dataset CSV in `data/`.
-2. Create `models/<name>/` and copy the three config files from an existing model.
+2. Create `models/<name>/` and copy the config files from an existing model.
 3. Change `data_path`, `output_dir`, `log_path`, and in the Optuna config `storage_path`,
    `study_name` and `gap_days` (at least the target horizon in calendar days).
 
@@ -69,6 +71,183 @@ python -m shap_tool --config models/sp500/shap_config.json
 ```
 
 Outputs are generated in `models/sp500/outputs/shap/`, including `report.html`.
+
+6. Run the feature statistics tool on a dataset:
+
+```bash
+python -m feature_stats_tool --config models/sp500/feature_stats_config.json
+```
+
+Or point it at any CSV without a config:
+
+```bash
+python -m feature_stats_tool --data data/sp500_Y-34-61.csv --output models/sp500/outputs/feature_stats \
+  --exclude "P123 ID,Ticker" --categorical "Sub-Sector Code"
+```
+
+The report is generated at `models/sp500/outputs/feature_stats/report.html`, with
+`stats.csv` (one row per feature) and `results.json` beside it. It uses every row by
+default; a 500k-row, 60-feature dataset takes about 30 seconds and 1.6 GB of memory.
+
+7. Train and validate models the P123 way:
+
+```bash
+python -m train_tool --config models/sp500/train_config.json
+```
+
+See [Train tool](#train-tool) below.
+
+## Train tool
+
+`train_tool` replicates P123 AI Factor validation locally on a downloaded dataset, so a
+model's results can be checked against P123's Results tab and, later, feature sets can be
+compared without spending P123 resources.
+
+What it does, per model in the config:
+
+1. Loads the dataset CSV and keeps the dates inside `dataset_start`..`dataset_end` (P123's
+   Validation > Method > Dataset Period). Drops rows without a target and rows with more
+   than `max_na_pct` % missing features, then fills the remaining NAs with 0 (P123: "NAs go
+   to the middle"; the data is already normalized).
+2. Builds the folds like P123's Rolling Time Series CV: holdout length = (dataset period -
+   training period - gap) / folds; each fold trains on `training_years`, skips `gap_weeks`,
+   then predicts its holdout. The holdouts are back to back and end at the dataset end.
+   `folds.csv` lists the dates and row counts so you can compare them with P123's chart.
+3. Trains `runs` LightGBM models per fold with different seeds (like repeated P123 models
+   tagged `#random`) and saves each run's holdout predictions.
+4. Scores every run, averages the runs, and (with more than one run) scores an ensemble of
+   the runs' averaged predictions:
+   - **RMSE, Spearman, Pearson, R2**: pooled over all holdout rows (P123 Lift tab).
+   - **IC/date**: mean of the per-date Spearman correlations.
+   - **Portfolio stats** (P123 Compare All / Return tabs; needs weekly returns, below): on
+     each date the predictions are split into `quantiles` buckets (High = top, Low =
+     bottom). Each bucket is an equal-weighted portfolio rebalanced every date and held one
+     week. `Avg%` = mean weekly return compounded over a year (52.18 weeks), `Cmp%` =
+     compounded annual return, `SD` = annualized standard deviation, `SR` = (mean weekly x
+     52.18) / SD, `Turn%` = annualized one-way turnover. Slippage (`slippage_pct`, default
+     0.1% like P123) is charged on every buy and sell. `H-L Avg%` = the mean weekly High
+     minus Low return, annualized the same way. These conventions reproduce P123's Compare
+     All numbers exactly from its Portfolio download (see below).
+   - **TgtHigh, TgtLow, TgtH-L**: mean TARGET per bucket, in TARGET units. Available
+     without weekly returns.
+
+### Weekly returns for portfolio stats
+
+P123 computes its portfolio returns from weekly price returns, which aren't in a dataset by
+default. Add the feature `Future%Chg_D(5)` (the price change over the next 5 weekdays) to a
+P123 dataset with Dataset-scope MinMax normalization, and set `returns_col` to it. The tool
+never uses it as a feature.
+
+P123's portfolio week runs from the close of the first trading day after one Saturday to
+the close of the first trading day after the next Saturday (checked against the Benchmark
+column of a P123 Portfolio download: identical every week). `Future%Chg_D(5)` runs from the
+close as of Monday to the close as of the next Monday, a holiday taking the previous
+trading day's close (`_D` functions count weekdays). `Future%Chg(5)` counts 5 trading days
+from the first trading day after the date. Both match P123's week except in holiday weeks,
+where each is one day off (about 20% of weeks). That difference is random, not a bias, and
+both columns work equally well.
+Download the returns in their own dataset rather than adding them to
+a Z-score training dataset: Z-score outlier clipping would cut big weekly moves.
+
+P123 normalizes it like any feature. With Dataset scope (MinMax or Z-score over the whole
+dataset) that is a straight-line rescale, so it can be turned back into percent:
+`return % = (value - returns_zero) / returns_per_pct`. Find the two numbers with:
+
+```bash
+python -m train_tool.calibrate --config models/sp500/train_config.json --uids 4737 5881 --write
+```
+
+It fits the column against real prices of a few long-lived stocks (P123 IDs from the
+dataset; 4737 = IBM, 5881 = MSFT), using 1 API call per stock, cached as
+`data/calib_prices_<id>.csv`. R2 should be about 0.9999. The numbers change with each
+download, since the min/max depend on the dataset's period.
+
+`returns_path` reads the returns from a different CSV (joined on Date and P123 ID). One
+download with `Future%Chg(5)` can then supply returns for every other dataset of the same
+universe, which saves adding the column to each feature-test dataset.
+
+### Comparing with P123
+
+To match P123, train on the same normalization P123 used. Features don't matter (LightGBM
+only uses their order), but the TARGET does: a Z-score target is clipped at the outlier
+limit, while a MinMax target keeps its outliers, and LightGBM's squared-error loss chases
+them. `models/sp500/train_config_zscore.json` trains on the Z-score dataset and takes
+returns from the MinMax download.
+
+The training dataset must be downloaded with exactly the normalization the P123 run used
+(scaling, trim %, outlier handling = clip, outlier limit). Different trim or clipping gives
+a different TARGET, and so a different model. A check: P123's Lift tab download
+(lift-data.csv) gives the holdout TARGET's mean and spread, which the local holdout
+TARGET should reproduce.
+
+Change the number of quantiles without retraining:
+
+```bash
+python -m train_tool --config models/sp500/train_config.json --report-only --quantiles 20
+```
+
+Other CLI overrides: `--data`, `--output`, `--runs`, `--folds`, `--training-years`,
+`--gap-weeks`, `--quantiles`.
+
+### HTML report
+
+Every run also writes `report.html`, an interactive report (open it in a browser; Plotly
+loads from a CDN, so it needs internet). It covers 10, 20 and 50 quantiles in the same file
+(`report_quantiles`), and controls at the top switch the model, the run (each run, the
+mean of runs, or the ensemble) and the quantile count:
+
+- Headline numbers: H-L, High, Low and universe Avg%, Spearman, RMSE.
+- Quantile counts compared: one table with 10, 20 and 50 side by side.
+- Annualized return by quantile (P123 Return tab), with the universe as a dashed line.
+- Growth of 100 for High, Low and the universe, with the folds shaded.
+- High minus Low return in each 26-week period.
+- Lift chart: mean prediction and mean actual TARGET per prediction percentile.
+- Spearman per date over time, with a 13-week average and the fold starts.
+- All runs (P123 Compare All columns), each fold scored on its own, feature importance
+  (share of gain), the fold dates and the hyperparameters.
+
+Without weekly returns the portfolio charts are hidden and the quantile charts show mean
+TARGET instead. `--report-only` rebuilds the HTML report from the saved predictions too.
+It follows the system light/dark setting.
+
+Outputs in `output_dir`: `report.html`, `report.txt` (the tables printed at the end), `runs.csv` (one row
+per model and run), `summary.csv` (mean and `_std` over runs per model), `ensemble.csv`,
+`quantiles_<N>.csv` (per bucket: mean TARGET and portfolio Avg%, Cmp%, SD, Turn%, per run
+and averaged), `folds.csv`, `feature_importance.csv` (gain and splits per model, run and
+fold), `predictions/` (holdout predictions per run, used by `--report-only`),
+`run_config.json`, `run.log`.
+
+### Train config options
+
+- `data_path`, `output_dir`, `target_col` (`TARGET`), `date_col` (`Date`), `id_col` (`P123 ID`).
+- `exclude_columns`: non-feature columns (default `P123 ID`, `Ticker`).
+- `features`: explicit feature list (default: every other column). `drop_features`: features
+  to remove, for add/remove-one feature tests.
+- `categorical_columns`: features passed to LightGBM as categorical. Default none, since the
+  P123 datasets deliver `Sub-Sector Code` normalized.
+- `dataset_start`, `dataset_end`: P123's Dataset Period. Default: the CSV's first/last date.
+- `validation`: `method` (`rolling` = P123 Rolling Time Series CV, `expanding` = Time Series
+  CV, `holdout` = Basic Holdout), `folds` (4), `training_years` (16), `gap_weeks` (20).
+- `preprocessing`: `na_fill`: P123 puts NAs in the middle, so `"zero"` for Z-score data,
+  `0.5` for MinMax data; also `"median"` (the feature's median on that date) or `"none"`
+  (LightGBM handles NAs). `max_na_pct` (30): rows with more NA features are dropped.
+  `clip`: clip features and TARGET at +-this value, like P123's Z-score outlier clipping
+  (its outlier limit, e.g. 2.5), for a dataset downloaded without clipping. P123's Z-score
+  uses the mean and std after trimming the trim % from each tail, then clips; downloading
+  with P123's trim and no clipping, then setting `clip`, reproduces P123's values.
+- `returns_col`, `returns_path`, `returns_zero`, `returns_per_pct`, `slippage_pct`: weekly
+  returns for portfolio stats (see above). Without `returns_col` only TARGET-based quantile
+  stats are reported.
+- `runs` (5), `base_seed` (1; run k uses `base_seed + k - 1`), or `seeds` as an explicit list
+  (sets the number of runs). `n_jobs` (-1 = all cores).
+- `quantiles` (10): quantile count for `report.txt` and the CSVs.
+- `report_quantiles` (`[10, 20, 50]`): quantile counts in `report.html`. `html_report`
+  (true): set false to skip it.
+- `models`: list of `{"name": ..., "params": {...}}`. `params` is P123's Hyperparams JSON
+  (LightGBM scikit-learn names such as `n_estimators`, `num_leaves`, `learning_rate`,
+  `min_child_samples`, `subsample`, `colsample_bytree`). A seed in `params` is replaced by
+  the run's seed.
+- Keys starting with `_` (e.g. `_comment`) are ignored.
 
 ## Configuration
 
@@ -268,6 +447,9 @@ Example `models/sp500/shap_config.json`:
 
 ### Optuna config options
 
+Rows with a missing `TARGET` are dropped before the split. P123 leaves the target blank for the
+last few months of a dataset (the forward return is not known yet) and for some delisted stocks.
+
 - `data_path`: CSV dataset path.
 - `target_col`: Target column name.
 - `date_col`: Optional date column (removed from features).
@@ -310,6 +492,25 @@ Example `models/sp500/shap_config.json`:
 - `low_importance_quantile`: Quantile for low-importance candidates.
 - `log_level`: Logging level (e.g. `INFO`, `DEBUG`).
 - `log_path`: Path for the run log file.
+
+### Feature stats config options
+
+- `data_path`, `target_col`, `date_col`, `output_dir`, `log_level`, `log_path`: as for the other tools.
+- `exclude_columns`: Columns to skip (e.g. `P123 ID`, `Ticker`). The date column is always skipped.
+- `categorical_columns`: Columns summarized as category counts instead of numeric stats. Non-numeric columns are treated as categorical automatically.
+- `include_target`: Also show stats for the target column (marked `target`). Default `true`.
+- `sample_rows`: Random row sample; `null` (default) uses all rows.
+- `time_bucket`: Period for the over-time charts (`W`, `M`, `Q`). Default `M`.
+- `hist_bins`: Histogram bins. Default `50`.
+- `hist_clip_quantile`: Clip histogram ranges to the `[q, 1-q]` quantiles (e.g. `0.005`) for raw features with extreme outliers. `0` (default) uses the full min-max range. Stats are never clipped.
+- `top_categories`: Categories shown per categorical feature. Default `30`.
+- Flag thresholds:
+  - `missing_threshold` (default `0.2`): flag `high_missing` above this missing share.
+  - `pileup_threshold` (default `0.10`): flag `pile_up` when more than this share of values sit exactly at the min or max. P123 Z-score clipping usually puts 2-9% at each bound, so the default only flags unusual cases.
+  - `kurtosis_threshold` (default `10`): flag `heavy_tails` above this excess kurtosis.
+  - `low_unique_threshold` (default `20`): tag `discrete` below this many distinct values.
+  - `date_constant_threshold` (default `0.9`): tag `date_constant` (macro/market-level) when every stock has the same value on at least this share of dates.
+  - `drift_threshold` (default `0.5`): flag `drift` when the std of the per-date mean exceeds this share of the overall std, i.e. the feature isn't normalized by date and its level moves over time.
 
 ## CLI usage
 
@@ -361,9 +562,19 @@ python -m shap_tool --config models/sp500/shap_config.json
 
 Optuna outputs:
 
-- `outputs/optuna/report.html`: HTML report with study summary and Optuna charts.
-- `outputs/optuna/results.json`: Best parameters and trial summary.
+- `outputs/optuna/report.html`: HTML report with study summary, a baseline score (always predicting the
+  training-set mean of `TARGET`) and the best trial's % improvement over it, and full-width Optuna charts
+  (history, parameter importances, parallel coordinate, one slice plot per parameter). Raw RMSE depends on
+  the scale of `TARGET` (a Z-score target has a much larger RMSE than a min-max one), so compare datasets
+  by improvement vs baseline, not by RMSE.
+- `outputs/optuna/results.json`: Best parameters, baseline score (`study.baseline_value`) and trial summary.
 - `outputs/optuna/study.db`: SQLite Optuna study database.
+
+Feature stats outputs:
+
+- `outputs/feature_stats/report.html`: summary tiles, flag filters, a sortable table with a mini histogram per feature, and per-feature detail (all stats, full histogram with log-scale option, P5/median/P95 and mean over time, missing values over time), plus category counts for categorical features.
+- `outputs/feature_stats/stats.csv`: one row per feature with every statistic and flag.
+- `outputs/feature_stats/results.json`: everything above, including histogram bins and time series. Regenerate the report from it with `--report-only`.
 
 ## Report features
 

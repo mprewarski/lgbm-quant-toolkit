@@ -1,11 +1,12 @@
 {
-  "data_path": "data/SP500-9MRel-ZsDs-Y-19-64-B.csv",
+  "data_path": "data/sp500_Y-34-61_fut5.csv",
   "target_col": "TARGET",
   "date_col": "Date",
   "output_dir": "models/sp500/outputs/optuna",
   "exclude_columns": [
     "P123 ID",
-    "Ticker"
+    "Ticker",
+    "Future%Chg(5)"
   ],
   "categorical_columns": [
     "Sub-Sector Code"
@@ -18,7 +19,7 @@
   "random_state": 42,
   "metric": "rmse",
   "direction": null,
-  "study_name": "sp500_9mrel_timesplit",
+  "study_name": "sp500_9mrel_y34-61_minmax",
   "storage_path": "models/sp500/outputs/optuna/study.db",
   "log_level": "INFO",
   "log_path": "models/sp500/outputs/optuna/run.log",
@@ -28,7 +29,7 @@
       "max": 0.1
     },
     "num_leaves": {
-      "min": 16,
+      "min": 8,
       "max": 64
     },
     "max_depth": {
@@ -37,7 +38,7 @@
     },
     "min_child_samples": {
       "min": 5,
-      "max": 100
+      "max": 500
     },
     "subsample": {
       "min": 0.6,
