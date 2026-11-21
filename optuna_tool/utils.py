@@ -113,6 +113,13 @@ def prepare_features(
     if target_col not in df.columns:
         raise ValueError(f"Target column '{target_col}' not found")
 
+    # Rows without a target can't be trained or scored. P123 datasets leave TARGET blank
+    # for the most recent dates (the forward return isn't known yet) and for some
+    # delisted stocks, so drop them before splitting.
+    df = df[df[target_col].notna()]
+    if df.empty:
+        raise ValueError(f"Target column '{target_col}' has no non-missing values")
+
     drop_cols = [target_col]
     if date_col and date_col in df.columns:
         drop_cols.append(date_col)

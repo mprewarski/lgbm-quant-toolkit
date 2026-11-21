@@ -1,5 +1,5 @@
 {
-  "data_path": "data/sp500_Y-34-61.csv",
+  "data_path": "data/sp500_Y-34-61_zscore.csv",
   "target_col": "TARGET",
   "date_col": "Date",
   "output_dir": "models/sp500/outputs/feature_stats",
