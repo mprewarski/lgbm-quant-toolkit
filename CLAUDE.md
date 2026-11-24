@@ -20,7 +20,8 @@ feature_analysis_tool/  importance, stability (PSI), correlation/VIF, leakage fl
 optuna_tool/            LightGBM hyperparameter search with Optuna
 shap_tool/              SHAP values, dependence/interaction plots, low-importance features
 feature_stats_tool/     per-feature distribution stats, histograms, stats over time, data-quality flags
-train_tool/             P123 AI Factor-style training: rolling CV folds, multi-seed runs, RMSE/Spearman/quantile stats
+train_tool/             P123 AI Factor-style training: rolling CV folds, multi-seed runs, RMSE/Spearman/quantile stats;
+                        train_tool.feature_test: remove/add features one at a time, paired-by-seed comparison
 p123_client.py          shared P123 API client (credentials from .env)
 data/                   P123 dataset CSVs (gitignored, 100-250 MB each)
 models/<model>/         one folder per model: *_config.json, train prompt XML, outputs/
@@ -90,6 +91,10 @@ Dataset CSV columns: `Date`, `P123 ID`, `Ticker`, features..., `Sub-Sector Code`
   after the next Saturday. `Future%Chg_D(5)` = close as of Monday to close as of next Monday (holiday ->
   previous close); `Future%Chg(5)` = next trading day + 5 bars. Each is a day off in ~20% of weeks;
   slippage 0.1% per buy and sell; Avg% = (1 + mean weekly)^52.18 - 1; SR = mean x 52.18 / SD.
+- Feature tests (`python -m train_tool.feature_test --config models/sp500/feature_test_remove.json`):
+  every feature set uses the same seeds; judge a feature by its paired difference vs baseline and its t
+  (shown from 3 runs). Seed noise is large (P123 H-L varies ~4 points between identical runs), so don't
+  act on a single 2-3 run result. Finished runs are cached by a fingerprint and reused.
 - A new dataset: run `feature_stats_tool` on it first to check ranges, missing values and clipping.
 
 ## Environment

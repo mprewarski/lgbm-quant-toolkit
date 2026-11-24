@@ -19,7 +19,7 @@ models/<model>/          configs, P123 training prompt XML, outputs/ (gitignored
   sp500/                 main model: S&P 500, 9-month return relative to SPY
   us_smcap_3mtot/        US small cap, 3-month total return
   canada/                Canadian model (planning)
-feature_analysis_tool/   optuna_tool/   shap_tool/   feature_stats_tool/   train_tool/
+feature_analysis_tool/   optuna_tool/   shap_tool/   feature_stats_tool/   train_tool/ (incl. feature_test)
 p123_client.py           shared Portfolio123 API client
 docs/                    tool design specs and notes
 scripts/                 one-off helpers (e.g. print_column_values.py)
@@ -248,6 +248,62 @@ fold), `predictions/` (holdout predictions per run, used by `--report-only`),
   `min_child_samples`, `subsample`, `colsample_bytree`). A seed in `params` is replaced by
   the run's seed.
 - Keys starting with `_` (e.g. `_comment`) are ignored.
+
+## Feature tests
+
+`train_tool.feature_test` compares feature sets with the train tool's validation: remove
+current features one at a time, or add new ones one at a time, training each feature set
+several times.
+
+```bash
+python -m train_tool.feature_test --config models/sp500/feature_test_remove.json
+python -m train_tool.feature_test --config models/sp500/feature_test_add.json --runs 5
+python -m train_tool.feature_test --config models/sp500/feature_test_remove.json --report-only
+```
+
+- **Remove test** (`"mode": "remove"`): the baseline is every feature of the base config;
+  each variant drops one candidate. `"candidates": "all"` tests every feature.
+- **Add test** (`"mode": "add"`): point `data_path` at a download with the current
+  features plus the new ones. The baseline is that dataset without the candidates; each
+  variant adds one.
+- `include_all` (true) also tests removing / adding all candidates together.
+
+How the comparison works: every feature set is trained with the same seeds, folds and
+rows, and each variant is compared with the baseline run that used the same seed. The
+report shows the average change (Δ), its standard error and t = Δ / se. Pairing by seed
+removes most of the run-to-run noise (P123 runs of one model can differ by 4 points of
+H-L), so smaller effects show up. |t| above about 2 is unlikely to be noise; with 3 runs a
+test is still rough, so re-run promising features with more runs before acting.
+
+For a remove test, a better result without a feature means the feature may be hurting.
+"Better" is higher for returns, SR, Spearman and IC, and lower for RMSE and Low Avg%.
+
+Finished runs are saved in `predictions/` with a fingerprint of the features, model,
+seed, data and validation settings. Running a test again only trains what's missing, so
+you can stop and resume, add candidates, or raise `--runs`; changing the model or data
+retrains automatically.
+
+Outputs in `output_dir`: `report.html` (a ranked chart of each feature's effect with error
+bars and per-run dots, and a table; metric and quantile selectors), `report.txt`,
+`summary.csv` (per feature set: mean, `_delta`, `_se`, `_t` for every metric),
+`runs.csv` (every run), `variants.json`, `run.log`.
+
+Each run trains one model per fold, so a test costs (candidates + 2) x runs trainings:
+5 candidates with 3 runs is 21, all 61 features with 3 runs is 189.
+
+### Feature test config options
+
+- `base_config`: the train config with the model, data and validation settings.
+- `output_dir`, `name` (title in the report; default the folder name).
+- `mode`: `remove` or `add`. `candidates`: feature names (exact column names), or `"all"`
+  in remove mode.
+- `data_path`: use a different dataset than the base config (for add tests).
+- `model`: model name from the base config (default the first).
+- `runs` (3), `base_seed` (1) or `seeds` (explicit list).
+- `quantiles` (`[10, 20, 50]`): quantile counts scored and shown in the report.
+- `include_all` (true), `rank_by` (`hl_avg`; also `high_avg`, `low_avg`, `high_sr`,
+  `spearman`, `ic_mean`, `rmse`, `tgt_hl`): the metric `report.txt` is sorted by and the
+  report opens on.
 
 ## Configuration
 

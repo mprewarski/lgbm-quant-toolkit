@@ -1,0 +1,13 @@
+{
+  "_comment": "Remove features one at a time from the model in train_config_zscore.json and compare with the full feature set. Delete or add names in 'candidates', or use \"all\" for every feature (61 features x runs: hours).",
+  "base_config": "models/sp500/train_config_zscore.json",
+  "output_dir": "models/sp500/outputs/feature_tests/remove_example",
+  "mode": "remove",
+  "candidates": [
+    "ROA StdDev"
+],
+  "runs": 9,
+  "quantiles": [10, 20, 50],
+  "include_all": true,
+  "rank_by": "hl_avg"
+}

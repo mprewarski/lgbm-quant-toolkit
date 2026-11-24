@@ -36,6 +36,8 @@ def _clean(obj):
     if isinstance(obj, (np.floating, float)):
         v = float(obj)
         return None if math.isnan(v) or math.isinf(v) else round(v, 6)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
     if isinstance(obj, (np.integer,)):
         return int(obj)
     return obj

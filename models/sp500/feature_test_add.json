@@ -1,0 +1,24 @@
+{
+  "_comment": "Add new features one at a time. data_path is a download that has the current features plus the new ones; the baseline is that dataset without the candidates. Replace the candidate names with the new features' column names.",
+  "base_config": "models/sp500/train_config_add.json",
+  "data_path": "data/sp500_Y-34-61_plus18.csv",
+  "output_dir": "models/sp500/outputs/feature_tests/plus15",
+  "mode": "add",
+  "candidates": [
+    "12-1 momentum vol-scaled",
+    "Accruals (Sloan)",
+    "EPS revision CurFY 4W",
+    "EPS revision CurFY 13W",
+    "EPS revision NextFY 13W",
+    "Net buyback yield",
+    "Recommendation change 13W",
+    "Residual momentum",
+    "Revision breadth CurFY",
+    "Sales revision CurFY 13W",
+    "SUE Q1"
+  ],
+  "runs": 9,
+  "quantiles": [10, 20, 25, 50],
+  "include_all": true,
+  "rank_by": "high_avg"
+}
